@@ -11,6 +11,9 @@ const STOP = Symbol('stop');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let SPEED = 1, GOD = false;
+const BSPEEDS = [1, 0.6, 0.35], BSPEED_NAMES = ['普通', '快', '超快'];
+let bspeed = 0;
+const bwait = ms => wait(ms * BSPEEDS[bspeed]);
 const wait = ms => new Promise(r => setTimeout(r, ms * SPEED));
 const rnd = n => Math.floor(Math.random() * n);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -100,7 +103,7 @@ function freshState() {
   return {
     mode: 'title', mapId: 'village', x: 0, y: 0, dir: 'D', party: [], inv: {}, gold: 0, flags: {}, karma: 0,
     quests: {}, goal: '', playTime: 0, busy: false, menus: [], dialog: null, toasts: [], banner: null, bannerId: 0,
-    battle: null, ending: null, steps: 0, waitOk: null,
+    battle: null, ending: null, steps: 0, waitOk: null, dex: {}, visited: {}, card: null, board: null,
   };
 }
 const curMap = () => D.maps[S.mapId];
@@ -111,7 +114,7 @@ function fullHeal() { for (const a of S.party) { a.hp = maxHp(a); a.mp = maxMp(a
 function saveGame() {
   const data = {
     v: 1, mapId: S.mapId, x: S.x, y: S.y, dir: S.dir, gold: S.gold, inv: S.inv, flags: S.flags, karma: S.karma,
-    quests: S.quests, goal: S.goal, playTime: S.playTime,
+    quests: S.quests, goal: S.goal, playTime: S.playTime, dex: S.dex, visited: S.visited,
     party: S.party.map(a => ({ id: a.id, level: a.level, exp: a.exp, hp: a.hp, mp: a.mp, equip: a.equip })),
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; }
@@ -123,7 +126,7 @@ function loadGame() {
   if (!data) return false;
   S = freshState();
   Object.assign(S, { mapId: data.mapId, x: data.x, y: data.y, dir: data.dir, gold: data.gold, inv: data.inv, flags: data.flags,
-    karma: data.karma, quests: data.quests, goal: data.goal, playTime: data.playTime, mode: 'map' });
+    karma: data.karma, quests: data.quests, goal: data.goal, playTime: data.playTime, mode: 'map', dex: data.dex || {}, visited: data.visited || {} });
   S.party = data.party.map(p => Object.assign({ st: {} }, p));
   built = null;
   return true;
@@ -213,7 +216,12 @@ async function exec(c) {
       toast((c[2] === 'done' ? '任務完成：' : '新任務：') + q.name);
       break;
     }
-    case 'karma': S.karma += c[1]; break;
+    case 'karma':
+      S.karma += c[1];
+      toast(c[1] > 0 ? '（島上某處，有人默默推了你一下。）' : '（島上某處，有人輕輕嘆了一口氣。）');
+      break;
+    case 'chapter': await showCard(c[1], c[2], c[3]); break;
+    case 'board': await openBoard(c[1]); break;
     case 'battle': {
       const r = await battle(c[1], c[2] || {});
       if (r === 'lose') { await gameOver(); return STOP; }
@@ -262,6 +270,7 @@ async function runAutos() {
 /* ================================================================ 地圖 */
 function teleport(mapId, x, y, dir) {
   S.mapId = mapId; S.x = x; S.y = y; S.dir = dir;
+  S.visited[mapId] = true;
   S.banner = D.maps[mapId].name; S.bannerId++;
   S.steps = 0;
   S.pendingAuto = true;
@@ -352,10 +361,113 @@ const STATN = { atk: '攻', def: '防', mag: '魔', spd: '速', hp: 'HP', mp: 'M
 const slotOf = id => ({ weapon: 'weapon', armor: 'armor', acc: 'acc' })[D.items[id].type];
 const SLOTN = { weapon: '武器', armor: '防具', acc: '飾品' };
 
+const skitSeen = k => !!S.flags['skit:' + k.id];
+const skitsAvail = () => (D.skits || []).filter(k => cond(k.cond));
 function openMainMenu() {
   pushMenu({
-    cls: 'main', title: '選單', build: () => ['道具', '技能', '裝備', '狀態', '任務', '存檔', '關閉'].map(l => ({ label: l })),
-    onPick: i => [menuItemsField, menuSkillsField, menuEquip, menuStatus, menuQuests, () => { toast(saveGame() ? '已存檔。' : '無法存檔'); }, popMenu][i](),
+    cls: 'main', title: '選單',
+    build: () => [
+      { label: '道具' }, { label: '技能' }, { label: '裝備' }, { label: '狀態' },
+      { label: '聊天', right: skitsAvail().some(k => !skitSeen(k)) ? 'NEW' : '', disabled: !skitsAvail().length },
+      { label: '圖鑑' }, { label: '跳串', right: '傳送' }, { label: '任務' }, { label: '設定' }, { label: '存檔' }, { label: '關閉' },
+    ],
+    onPick: i => [menuItemsField, menuSkillsField, menuEquip, menuStatus, menuSkits, menuDex, menuTravel, menuQuests, menuSettings,
+      () => { toast(saveGame() ? '已存檔。' : '無法存檔'); }, popMenu][i](),
+  });
+}
+function menuSkits() {
+  pushMenu({
+    title: '隊伍聊天', cls: 'wide',
+    build: () => skitsAvail().map(k => ({ label: k.title, right: skitSeen(k) ? '' : 'NEW', id: k.id })),
+    onPick: (i, it) => {
+      const k = D.skits.find(x => x.id === it.id);
+      S.menus.length = 0;
+      S.flags['skit:' + k.id] = true;
+      runBusy(k.script);
+    },
+  });
+}
+function dexEntry(id) { return S.dex[id] || (S.dex[id] = { seen: false, killed: 0, weak: [], resist: [] }); }
+const EN = { fire: '炎上', ice: '冷場', thunder: '暴雷', holy: '神串', dark: '黑歷史', phys: '物理' };
+function knownText(id) {
+  const d = S.dex[id];
+  if (!d) return '';
+  const w = d.weak.map(e => EN[e]).join('、'), r = d.resist.map(e => EN[e]).join('、');
+  return [w && '弱：' + w, r && '抗：' + r].filter(Boolean).join('　');
+}
+function menuDex() {
+  const ids = Object.keys(D.enemies);
+  pushMenu({
+    title: `怪物圖鑑（${ids.filter(id => S.dex[id] && S.dex[id].seen).length} / ${ids.length}）`, cls: 'wide dex',
+    build: () => ids.map(id => {
+      const d = S.dex[id], e = D.enemies[id];
+      if (!d || !d.seen) return { label: '？？？', id, desc: '還沒有遇過。' };
+      const k = knownText(id) || '弱點：？？？（用屬性攻擊打打看）';
+      return { label: e.name, right: d.killed ? '打倒 ' + d.killed : '', id,
+        desc: `HP ${e.hp}　攻 ${e.atk}　防 ${e.def}　魔 ${e.mag}　速 ${e.spd}｜${k}｜${e.desc || ''}` };
+    }),
+    onPick: () => {},
+  });
+}
+function menuTravel() {
+  if ((D.noTravel || []).includes(S.mapId)) { toast('這裡的訊號太強，沒辦法跳串。'); return; }
+  pushMenu({
+    title: '跳串（傳送到去過的地方）', cls: 'wide',
+    build: () => {
+      const list = (D.travel || []).filter(t => S.visited[t.map] && cond(t.cond)).map(t => ({ label: t.name, right: t.map === S.mapId ? '現在位置' : '', t }));
+      return list.length ? list : [{ label: '（還沒有可以傳送的地方）', disabled: true }];
+    },
+    onPick: (i, it) => {
+      const t = it.t;
+      S.menus.length = 0;
+      teleport(t.map, t.x, t.y, t.dir);
+      built = null;
+      saveGame();
+      render();
+      runBusy([]);
+    },
+  });
+}
+function menuSettings() {
+  pushMenu({
+    title: '設定', cls: 'wide',
+    build: () => [{ label: '戰鬥速度', right: BSPEED_NAMES[bspeed], desc: '按 Enter 切換。設定會記在這台裝置上。' }, { label: '返回' }],
+    onPick: i => {
+      if (i === 1) { popMenu(); return; }
+      bspeed = (bspeed + 1) % BSPEEDS.length;
+      const m = meta(); m.speed = bspeed; saveMeta(m);
+      render();
+    },
+  });
+}
+
+/* ================================================================ 討論板、章節卡 */
+function hashId(str) {
+  let h = 2166136261;
+  for (const ch of str) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36).padStart(7, '0').slice(0, 8);
+}
+function boardPosts(id) {
+  const b = D.boards[id];
+  return b.posts.map((p, i) => ({ ...p, i })).filter(p => cond(p.cond));
+}
+function openBoard(id) {
+  return new Promise(res => { S.board = { id, top: 0, res }; render(); });
+}
+function closeBoard() { const b = S.board; S.board = null; render(); b.res(); }
+function boardKey(btn) {
+  const b = S.board, n = boardPosts(b.id).length;
+  if (btn === 'up') b.top = Math.max(0, b.top - 1);
+  else if (btn === 'down') b.top = Math.min(n - 1, b.top + 1);
+  else if (btn === 'ok' || btn === 'back' || btn === 'menu') { closeBoard(); return; }
+  render();
+}
+function showCard(label, title, sub) {
+  return new Promise(res => {
+    const done = () => { if (S.card && S.card.res === done) { S.card = null; render(); res(); } };
+    S.card = { label, title, sub, res: done };
+    render();
+    setTimeout(done, 3200);
   });
 }
 function invList(filter) { return Object.keys(S.inv).filter(id => S.inv[id] > 0 && filter(D.items[id], id)); }
@@ -514,9 +626,26 @@ async function msg(text, ms = 380) {
   B.log.push(text);
   if (B.log.length > 4) B.log.shift();
   render();
-  await wait(ms);
+  await bwait(ms);
 }
-async function flash(u, cls, ms = 260) { u.fx = cls; render(); await wait(ms); u.fx = ''; }
+async function flash(u, cls, ms = 260) { u.fx = cls; render(); await bwait(ms); u.fx = ''; }
+function addGauge(n) { const B = S.battle; if (B) B.gauge = Math.min(100, B.gauge + n); }
+function popup(u, text, cls) {
+  const scr = el('scr'), fx = el('fx');
+  if (!scr || !fx) return;
+  const key = isEnemy(u) ? u.uid : 'p-' + u.id;
+  const target = scr.querySelector(`[data-u="${key}"]`);
+  if (!target) return;
+  const sr = scr.getBoundingClientRect(), tr = target.getBoundingClientRect();
+  const k = sr.width / 774 || 1;
+  const d = document.createElement('div');
+  d.className = 'pop ' + (cls || '');
+  d.textContent = text;
+  d.style.left = ((tr.left - sr.left + tr.width / 2) / k) + 'px';
+  d.style.top = ((tr.top - sr.top + (isEnemy(u) ? tr.height * 0.45 : 6)) / k) + 'px';
+  fx.appendChild(d);
+  setTimeout(() => d.remove(), 900);
+}
 
 async function battle(troopId, opts = {}) {
   const ids = D.troops[troopId];
@@ -526,7 +655,8 @@ async function battle(troopId, opts = {}) {
     seen[id] = (seen[id] || 0) + 1;
     return newEnemy(id, counts[id] > 1 ? ' ' + 'ABCD'[seen[id] - 1] : '');
   });
-  const B = S.battle = { enemies, turn: 0, log: [], bg: curMap().bg, noFlee: !!opts.noFlee || enemies.some(e => e.def.boss), actor: -1, hi: null, intro: true };
+  const B = S.battle = { enemies, turn: 0, log: [], bg: curMap().bg, noFlee: !!opts.noFlee || enemies.some(e => e.def.boss), actor: -1, hi: null, intro: true, gauge: 0, comboQueued: false };
+  for (const e of enemies) dexEntry(e.id).seen = true;
   for (const a of S.party) { a.st = {}; a.guard = false; a.fx = ''; }
   S.mode = 'battle';
   S.busy = true;
@@ -539,6 +669,7 @@ async function battle(troopId, opts = {}) {
   let result = null;
   while (!result) {
     B.turn++;
+    B.comboQueued = false;
     let acts = await partyInput();
     if (acts === 'flee') {
       const ps = aliveParty().reduce((s, a) => s + uStat(a, 'spd'), 0) / aliveParty().length;
@@ -547,7 +678,7 @@ async function battle(troopId, opts = {}) {
       await msg('逃跑失敗！');
       acts = [];
     }
-    const all = acts.map(a => ({ ...a, pri: a.type === 'defend' ? 1e4 : uStat(a.u, 'spd') * (0.75 + Math.random() * 0.5) }));
+    const all = acts.map(a => ({ ...a, pri: a.type === 'combo' ? 2e4 : a.type === 'defend' ? 1e4 : uStat(a.u, 'spd') * (0.75 + Math.random() * 0.5) }));
     for (const e of aliveEnemies()) {
       const act = enemyAction(e);
       all.push({ ...act, pri: (D.skills[act.sk].first ? 5000 : 0) + e.def.spd * (0.75 + Math.random() * 0.5) });
@@ -580,6 +711,7 @@ async function victory() {
   const B = S.battle;
   const exp = B.enemies.reduce((s, e) => s + (e.def.exp || 0), 0);
   const gold = B.enemies.reduce((s, e) => s + (e.def.gold || 0), 0);
+  for (const e of B.enemies) if (e.hp <= 0) dexEntry(e.id).killed++;
   await msg('戰鬥勝利！', 500);
   if (exp || gold) await msg(`獲得 ${exp} 經驗值、${gold} K 幣。`, 500);
   S.gold += gold;
@@ -611,6 +743,10 @@ async function partyInput() {
       continue;
     }
     if (r.flee) { B.actor = -1; return 'flee'; }
+    if (r.autoAll) {
+      for (let j = i; j < members.length; j++) acts[j] = (members[j].st.sleep || members[j].st.confuse) ? { type: 'auto', u: members[j] } : { type: 'attack', u: members[j], t: null };
+      break;
+    }
     acts[i] = r;
     i++;
   }
@@ -632,7 +768,7 @@ function commandFor(a, canBack) {
       if (!list.length) { toast('沒有可以選擇的對象'); return; }
       pushMenu({
         cls: 'battle', title: '選擇對象',
-        build: () => list.map(t => ({ label: uname(t), right: isEnemy(t) ? '' : `${t.hp}/${maxHp(t)}` })),
+        build: () => list.map(t => ({ label: uname(t), right: isEnemy(t) ? knownText(t.id) : `${t.hp}/${maxHp(t)}` })),
         onMove: j => { B.hi = list[j]; },
         onBack: () => { B.hi = null; popMenu(); },
         onPick: j => after(list[j]),
@@ -643,14 +779,26 @@ function commandFor(a, canBack) {
     pushMenu({
       cls: 'battle', title: ad(a).name,
       build: () => [
-        { label: '攻擊' },
-        { label: '技能', disabled: !!a.st.silence, right: a.st.silence ? 'sage' : '' },
-        { label: '道具', disabled: !battleItems().length },
-        { label: '防禦' },
-        { label: '逃跑', disabled: B.noFlee },
+        ...(B.gauge >= 100 && !B.comboQueued ? [{ label: '★ 合體技', right: '推 MAX', cmd: 'combo' }] : []),
+        { label: '攻擊', cmd: 'attack' },
+        { label: '技能', disabled: !!a.st.silence, right: a.st.silence ? 'sage' : '', cmd: 'skill' },
+        { label: '道具', disabled: !battleItems().length, cmd: 'item' },
+        { label: '防禦', cmd: 'defend' },
+        { label: '自動', right: '全員攻擊', cmd: 'auto' },
+        { label: '逃跑', disabled: B.noFlee, cmd: 'flee' },
       ],
       onBack: () => { if (canBack) done({ back: true }); },
-      onPick: i => {
+      onPick: (i0, it0) => {
+        const i = { attack: 0, skill: 1, item: 2, defend: 3, flee: 4, combo: 5, auto: 6 }[it0.cmd];
+        if (i === 5) {
+          pushMenu({
+            cls: 'battle wide', title: '合體技',
+            build: () => Object.entries(D.combos).map(([id, c]) => ({ label: c.name, desc: c.desc, id })),
+            onPick: (j, it) => { B.comboQueued = true; done({ type: 'combo', u: a, combo: it.id }); },
+          });
+          return;
+        }
+        if (i === 6) { done({ autoAll: true }); return; }
         if (i === 0) pickTarget('enemy', t => done({ type: 'attack', u: a, t }));
         else if (i === 1) {
           pushMenu({
@@ -700,7 +848,8 @@ function pickOne(u, list) {
 /* ---- 行動執行 ---- */
 async function execAction(act) {
   const u = act.u, B = S.battle;
-  if (act.type === 'defend') { u.guard = true; await msg(`${uname(u)}擺出了防禦姿勢。`, 300); return; }
+  if (act.type === 'defend') { u.guard = true; addGauge(D.gauge.defend); await msg(`${uname(u)}擺出了防禦姿勢。`, 300); return; }
+  if (act.type === 'combo') { await doCombo(act.combo); return; }
   if (u.st.sleep) { await msg(`${uname(u)}正在潛水……（睡眠中）`); return; }
   if (u.st.confuse) {
     const pool = [...aliveParty(), ...aliveEnemies()].filter(x => x !== u);
@@ -760,11 +909,45 @@ async function hitPhys(u, t, power, elem) {
     await applyDamage(t, u, c, '');
   }
 }
+async function doCombo(id) {
+  const B = S.battle, c = D.combos[id];
+  B.gauge = 0;
+  await msg(`合體技！全員一起推——「${c.name}」！`, 700);
+  if (c.kind === 'damage') {
+    const power = aliveParty().reduce((s, p) => s + uStat(p, 'atk') * c.atk + uStat(p, 'mag') * c.mag, 0);
+    for (const t of aliveEnemies()) {
+      const dmg = Math.round(Math.max(1, power - uStat(t, 'def') * 0.5) * (0.95 + Math.random() * 0.1) * elemMult(t, c.elem));
+      await applyDamage(null, t, dmg, elemNote(t, c.elem), c.elem);
+    }
+  } else {
+    for (const a of S.party) {
+      if (a.hp <= 0) { a.hp = Math.floor(maxHp(a) * 0.3); a.st = {}; await msg(`${ad(a).name}復活了！`, 300); }
+      else {
+        const h = Math.min(Math.floor(maxHp(a) * 0.6), maxHp(a) - a.hp);
+        a.hp += h;
+        for (const k of ['burn', 'silence', 'confuse', 'sleep']) delete a.st[k];
+        popup(a, '+' + h, 'heal');
+      }
+      if (a.hp > 0) { a.st.atkUp = Math.max(a.st.atkUp || 0, 3); a.st.defUp = Math.max(a.st.defUp || 0, 3); }
+    }
+    await msg('全隊回復了！攻擊力與防禦力提升了！', 600);
+  }
+}
 async function applyDamage(u, t, dmg, note, elem) {
   if (t.guard) dmg = Math.round(dmg * 0.5);
   dmg = Math.max(1, dmg);
   if (GOD && !isEnemy(t)) dmg = 1;
   t.hp = Math.max(0, t.hp - dmg);
+  if (isEnemy(t)) {
+    if (u && !isEnemy(u)) addGauge(D.gauge.hit + (note.includes('拔群') ? D.gauge.weak : 0) + (note.includes('會心') ? D.gauge.crit : 0));
+    const m = elemMult(t, elem), d = dexEntry(t.id);
+    if (m > 1 && !d.weak.includes(elem)) { d.weak.push(elem); note += '（發現弱點：' + EN[elem] + '）'; }
+    if (m < 1 && !d.resist.includes(elem)) d.resist.push(elem);
+  } else {
+    addGauge(D.gauge.hurt);
+    if (t.hp <= 0) addGauge(D.gauge.ko);
+  }
+  popup(t, String(dmg), elemMult(t, elem) > 1 ? 'weak' : isEnemy(t) ? '' : 'hurt');
   if (elem === 'holy' && t.st.hidden) { delete t.st.hidden; note += '（404 被解除了！）'; }
   await flash(t, 'hit');
   await msg(`${note ? note + ' ' : ''}${uname(t)}受到 ${dmg} 點傷害。`, 380);
@@ -843,6 +1026,7 @@ async function doSkill(u, sk, chosen) {
         if (!alive(t) && sk.revive) { t.hp = Math.max(1, Math.floor(uMaxHp(t) * 0.5)); t.st = {}; await msg(`${uname(t)}復活了！`); break; }
         const h = Math.min(healAmount(u, sk), uMaxHp(t) - t.hp);
         t.hp += h;
+        popup(t, '+' + h, 'heal');
         await flash(t, 'heal', 200);
         await msg(`${uname(t)}回復了 ${h} HP。`, 330);
         break;
@@ -963,13 +1147,14 @@ function render() {
   if (S.mode === 'title') html = renderTitle();
   else if (S.mode === 'map') { renderMap(); }
   else if (S.mode === 'battle') html = renderBattle();
-  else if (S.mode === 'gameover') html = `<div class="full over"><h2>全滅了……</h2><p>島，沉得更深了。</p></div>`;
+  else if (S.mode === 'gameover') html = `<div class="full over"><h2>本串已沉。</h2><p>全隊倒下了……島，沉得更深了。</p></div>`;
   else if (S.mode === 'ending') html = renderEnding();
   const mapLayer = el('maplayer');
   mapLayer.hidden = S.mode !== 'map';
   el('alt').innerHTML = html;
   el('alt').hidden = S.mode === 'map';
   el('ov').innerHTML = renderOverlays();
+  for (const li of el('ov').querySelectorAll('.menu.active li.sel')) li.scrollIntoView({ block: 'nearest' });
   const bn = el('bn');
   if (S.mode !== 'map' || !S.banner) { bn.innerHTML = ''; shownBanner = -1; }
   else if (shownBanner !== S.bannerId) { shownBanner = S.bannerId; bn.innerHTML = `<div class="banner">${esc(S.banner)}</div>`; }
@@ -1011,15 +1196,16 @@ function renderMap() {
 }
 function renderBattle() {
   const B = S.battle;
-  const en = B.enemies.map(e => `<div class="foe ${e.def.size === 'l' ? 'big' : ''} ${alive(e) ? '' : 'dead'} ${e.fx} ${B.hi === e ? 'hi' : ''}">
-      <div class="foe-name">${esc(e.name)}</div>${bar('en', e.hp, e.maxHp)}<div class="badges">${statusBadges(e)}</div>
+  const en = B.enemies.map(e => `<div class="foe ${e.def.size === 'l' ? 'big' : ''} ${alive(e) ? '' : 'dead'} ${e.fx} ${B.hi === e ? 'hi' : ''}" data-u="${e.uid}">
+      <div class="foe-name">${esc(e.name)}</div>${bar('en', e.hp, e.maxHp)}<div class="badges">${statusBadges(e)}${knownText(e.id) ? `<span class="weak">${esc(knownText(e.id))}</span>` : ''}</div>
       <img src="img/${e.def.sprite}.png" alt="${esc(e.name)}"></div>`).join('');
-  const party = S.party.map((a, i) => `<div class="pc ${B.actor === i ? 'act' : ''} ${a.hp <= 0 ? 'ko' : ''} ${a.fx || ''} ${B.hi === a ? 'hi' : ''}">
+  const party = S.party.map((a, i) => `<div class="pc ${B.actor === i ? 'act' : ''} ${a.hp <= 0 ? 'ko' : ''} ${a.fx || ''} ${B.hi === a ? 'hi' : ''}" data-u="p-${a.id}">
       <img src="img/${ad(a).sprite}.png" alt=""><div class="pc-b"><div class="pc-n"><b>${esc(ad(a).name)}</b> Lv${a.level} ${statusBadges(a)}</div>
       <div class="pc-r">HP ${bar('hp', a.hp, maxHp(a))} <span>${a.hp}</span></div><div class="pc-r">MP ${bar('mp', a.mp, maxMp(a))} <span>${a.mp}</span></div></div></div>`).join('');
   return `<div class="bscreen bg-${B.bg} ${B.intro ? 'intro' : ''}">
     <div class="log">${B.log.map(l => `<div>${esc(l)}</div>`).join('')}</div>
     <div class="foes">${en}</div>
+    <div class="gauge ${B.gauge >= 100 ? 'gmax' : ''}"><b>推</b><span class="gbar"><span style="width:${B.gauge}%"></span></span><em>${B.gauge >= 100 ? 'MAX！合體技' : B.gauge + '%'}</em></div>
     <div class="bpanel"><div class="party">${party}</div><div class="bslot"></div></div></div>`;
 }
 function menuHtml(m, active) {
@@ -1028,6 +1214,10 @@ function menuHtml(m, active) {
   let extra = '';
   if (m.cls === 'status') extra = statusPanel(m.actor);
   if (m.cls === 'quests') extra = questPanel();
+  if (/dex/.test(m.cls || '') && cur && cur.id) {
+    const seen = S.dex[cur.id] && S.dex[cur.id].seen;
+    extra = `<div class="dexpic">${seen ? `<img src="img/${D.enemies[cur.id].sprite}.png" alt="">` : '<span>？</span>'}</div>`;
+  }
   const list = items.map((it, i) => `<li class="${i === m.cursor ? 'sel' : ''} ${it.disabled ? 'dis' : ''}" data-i="${i}"><span>${esc(it.label)}</span>${it.right ? `<em>${esc(it.right)}</em>` : ''}</li>`).join('');
   return `<div class="menu ${m.cls || ''} ${active ? 'active' : ''}">${m.title ? `<div class="mt">${esc(m.title)}${/shop/.test(m.cls || '') ? `<span>${S.gold} K 幣</span>` : ''}</div>` : ''}
     ${extra}<ul>${list}</ul>${cur && cur.desc ? `<div class="md">${esc(cur.desc)}</div>` : ''}</div>`;
@@ -1044,9 +1234,26 @@ function questPanel() {
   const qs = Object.entries(S.quests).map(([id, st]) => `<li class="${st}"><b>${st === 'done' ? '✔' : '・'} ${esc(D.quests[id].name)}</b><br><small>${esc(D.quests[id].desc)}</small></li>`).join('');
   return `<div class="quest"><div class="goal"><small>目前目標</small><br>${esc(S.goal || '—')}</div><ul class="ql">${qs || '<li><small>還沒有接到支線任務。</small></li>'}</ul></div>`;
 }
+function renderBoard() {
+  const b = S.board, bd = D.boards[b.id], posts = boardPosts(b.id);
+  const day = ['日', '一', '二', '三', '四', '五', '六'];
+  const html = posts.slice(b.top).map((p, k) => {
+    const no = 100000 + hashId(b.id).charCodeAt(0) * 731 + p.i * 37;
+    const d = new Date(2026, 10, 1 + (p.i % 24), (p.i * 7) % 24, (p.i * 13) % 60);
+    const date = `${d.getFullYear() % 100}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}(${day[d.getDay()]})${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const body = p.text.split('\n').map(l => l.startsWith('>') ? `<span class="q">${esc(l)}</span>` : esc(l)).join('<br>');
+    const head = p.owner
+      ? `<b class="ttl">無標題</b> 名稱: <b class="own">島主？</b> ${date} ID:${'?'.repeat(8)} No.${no}`
+      : `<b class="ttl">無標題</b> 名稱: <b class="nm">無名氏</b> ${date} ID:${hashId(b.id + p.i)} No.${no}`;
+    return `<div class="post ${p.i === 0 ? 'op' : ''} ${p.owner ? 'owner' : ''}"><div class="ph">${head}</div><div class="pb">${body}</div></div>`;
+  }).join('');
+  return `<div class="board"><div class="bh">${esc(bd.title)}<span>↑↓ 捲動　Enter／Esc 關閉　（${b.top + 1}/${posts.length}）</span></div><div class="bl">${html}</div></div>`;
+}
 function renderOverlays() {
   let h = '';
   const ms = S.menus;
+  if (S.board) h += renderBoard();
+  if (S.card) h += `<div class="card"><div class="ch">無標題　名稱：無名氏　No.${hashId(S.card.title).length * 1000 + S.card.title.length}</div><div class="cl">${esc(S.card.label)}</div><div class="ct">${esc(S.card.title)}</div><div class="cs">${esc(S.card.sub || '')}</div></div>`;
   if (S.mode === 'battle') {
     const bm = ms.filter(m => /battle/.test(m.cls || ''));
     if (bm.length) h += `<div class="bmenu">${menuHtml(bm[bm.length - 1], true)}</div>`;
@@ -1088,6 +1295,8 @@ const DIRK = { up: 'U', down: 'D', left: 'L', right: 'R' };
 function press(btn, repeat) {
   if (!S || !D) return;
   if ((btn === 'ok' || btn === 'back' || btn === 'menu') && repeat) return;
+  if (S.card) { if (btn === 'ok') S.card.res(); return; }
+  if (S.board) { boardKey(btn); return; }
   if (S.dialog && !S.menus.length) { if (btn === 'ok') advanceDialog(); return; }
   if (S.waitOk && btn === 'ok') { const r = S.waitOk; S.waitOk = null; r(); return; }
   if (S.menus.length) {
@@ -1105,6 +1314,7 @@ function press(btn, repeat) {
 async function boot() {
   const res = await fetch('data/game.json');
   D = await res.json();
+  bspeed = meta().speed || 0;
   S = freshState();
   toTitle();
   window.addEventListener('keydown', e => {
@@ -1125,6 +1335,8 @@ async function boot() {
       press('ok', false);
       return;
     }
+    if (S.card) { press('ok', false); return; }
+    if (S.board) { const bl = e.target.closest('.board'); if (!bl || e.target.closest('.bh')) press('back', false); else press('down', false); return; }
     if (S.dialog || (S.waitOk)) press('ok', false);
   });
   setInterval(() => { if (S && (S.mode === 'map' || S.mode === 'battle') && !document.hidden) S.playTime++; }, 1000);
