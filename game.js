@@ -1378,6 +1378,7 @@ async function boot() {
   for (const n of new Set(Object.values(HERO_FRAMES).flat())) new Image().src = `img/${n}.png`;
   toTitle();
   window.addEventListener('keydown', e => {
+    if ((e.key === 'f' || e.key === 'F') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleFs(); return; }
     const b = KEYS[e.key];
     if (!b) return;
     e.preventDefault();
@@ -1438,13 +1439,49 @@ async function boot() {
 function fitStage() {
   const stage = document.getElementById('stage'), frame = document.getElementById('frame');
   if (!stage || !frame) return;
-  const k = Math.min(1, (document.documentElement.clientWidth - 16) / 774);
+  // 全螢幕時放大到剛好塞滿整個螢幕（保持比例）；平常只依寬度縮小
+  const k = document.body.classList.contains('fs')
+    ? Math.min(window.innerWidth / 774, window.innerHeight / 582)
+    : Math.min(1, (document.documentElement.clientWidth - 16) / 774);
   frame.style.transform = `scale(${k})`;
   stage.style.width = 774 * k + 'px';
   stage.style.height = 582 * k + 'px';
 }
+/* ---------------------------------------------------------------- 全螢幕
+   支援全螢幕 API 的瀏覽器（電腦、Android、iPad）會真的進入全螢幕；
+   不支援的（iPhone 的 Safari）就把遊戲畫面放大到填滿可見範圍。 */
+let nativeFs = false;
+function fsActive() { return document.body.classList.contains('fs'); }
+function nativeFsEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+function setFs(on) {
+  document.body.classList.toggle('fs', on);
+  fitStage();
+  if (on && S && D) toast(matchMedia('(hover:hover) and (pointer:fine)').matches ? '全螢幕：按 F 或右上角的按鈕離開' : '全螢幕：按右上角的按鈕離開');
+}
+function toggleFs() {
+  if (!fsActive()) {
+    setFs(true);
+    const el = document.documentElement;
+    try {
+      const r = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen ? el.webkitRequestFullscreen() : null;
+      if (r && r.catch) r.catch(() => { /* 被拒絕時維持網頁內的全螢幕 */ });
+    } catch (_) { /* 不支援時維持網頁內的全螢幕 */ }
+  } else {
+    setFs(false);
+    if (nativeFsEl()) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (_) { /* 已經離開 */ } }
+  }
+}
+function onFsChange() {
+  if (nativeFsEl()) nativeFs = true;
+  else if (nativeFs) { nativeFs = false; if (fsActive()) setFs(false); }  // 用 Esc 或返回鍵離開了瀏覽器全螢幕
+  fitStage();
+}
 if (typeof window !== 'undefined') {
   window.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[data-fs]').forEach(b => b.addEventListener('click', toggleFs));
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    window.addEventListener('resize', fitStage);
     fitStage();
     new ResizeObserver(fitStage).observe(document.documentElement);
     boot();

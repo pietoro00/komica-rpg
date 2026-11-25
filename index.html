@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>糟糕島物語</title>
 <style>
 /* VOICE: 熱鬧又帶點寂寞的匿名島嶼，像素 JRPG
@@ -155,6 +155,25 @@ button:focus-visible{outline:3px solid var(--gold)}
 @keyframes shake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
 @keyframes glow{50%{filter:brightness(2) drop-shadow(0 0 8px #8f8)}}
 @keyframes enc{0%{filter:brightness(4) contrast(2);transform:scale(1.08)}}
+/* ---- 全螢幕模式：遊戲畫面填滿螢幕；手機的按鍵半透明疊在畫面上 ---- */
+.fsx{display:none}
+.fsbtn{margin-top:8px;background:var(--panel);color:var(--ink);border:2px solid var(--edge);border-radius:16px;padding:3px 16px;font-family:inherit;font-size:14px;cursor:pointer}
+.fsbtn:hover{border-color:var(--gold)}
+body.fs{overflow:hidden;background:#000;height:100vh;height:100dvh;overscroll-behavior:none}
+body.fs header,body.fs .help,body.fs .about,body.fs .fsbtn{display:none}
+body.fs .stage{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);margin:0}
+body.fs .controls{position:fixed;inset:0;padding:0;margin:0;display:block;pointer-events:none;z-index:50}
+body.fs .controls button{pointer-events:auto}
+body.fs .dpad{position:absolute;left:calc(16px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom));grid-template-columns:repeat(3,58px);grid-template-rows:repeat(3,58px);gap:3px}
+body.fs .abtns{position:absolute;right:calc(16px + env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom));display:grid;grid-template-columns:auto auto;grid-template-areas:". m" "b ok";gap:12px;align-items:end;justify-items:center}
+body.fs .abtn.ok{grid-area:ok;width:74px;height:74px;font-size:24px}
+body.fs .abtn.b{grid-area:b;width:60px;height:60px;font-size:18px}
+body.fs .abtn.m{grid-area:m;height:38px}
+body.fs .dpad button,body.fs .abtn,.fsx{background:rgba(24,18,46,.32);border:2px solid rgba(244,236,216,.42);color:rgba(244,236,216,.82);text-shadow:0 1px 2px #000}
+body.fs .dpad button.on,body.fs .dpad button:active,body.fs .abtn:active{background:rgba(120,100,190,.55);border-color:rgba(255,213,74,.8)}
+body.fs .fsx{display:block;position:fixed;z-index:51;top:calc(10px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));border-radius:18px;padding:5px 14px;font-family:inherit;font-size:14px;line-height:1.4;cursor:pointer}
+/* 電腦（有滑鼠與鍵盤）全螢幕時不顯示畫面上的按鍵，用鍵盤操作 */
+@media (hover:hover) and (pointer:fine){body.fs .controls{display:none}}
 @media (max-width:520px){.controls{gap:12px}.dpad{grid-template-columns:repeat(3,42px);grid-template-rows:repeat(3,42px)}.abtn{width:56px;height:56px}.abtn.b{width:46px;height:46px}.abtn.m{height:36px;padding:0 10px}}
 
 /* ---- 推量表、傷害數字、弱點 ---- */
@@ -198,6 +217,7 @@ button:focus-visible{outline:3px solid var(--gold)}
 <header>
   <h1>糟糕島物語</h1>
   <p>～無名氏與最後的回應～　K 島背景的網頁 JRPG（Blazor 專案的網頁預覽版）</p>
+  <button class="fsbtn" data-fs>⛶ 全螢幕遊玩</button>
 </header>
 <div class="stage" id="stage">
   <div class="frame" id="frame">
@@ -219,11 +239,12 @@ button:focus-visible{outline:3px solid var(--gold)}
   </div>
   <div class="abtns">
     <button class="abtn b" data-btn="back" aria-label="取消">B</button>
-    <button class="abtn" data-btn="ok" aria-label="確認">A</button>
+    <button class="abtn ok" data-btn="ok" aria-label="確認">A</button>
     <button class="abtn m" data-btn="menu">選單</button>
   </div>
 </div>
-<p class="help"><b>方向鍵／WASD</b> 移動、選擇　<b>Enter／空白鍵／Z</b> 調查、對話、確認　<b>Esc／X</b> 打開選單、取消<br>
+<button class="fsx" data-fs aria-label="離開全螢幕">✕ 離開全螢幕</button>
+<p class="help"><b>方向鍵／WASD</b> 移動、選擇　<b>Enter／空白鍵／Z</b> 調查、對話、確認　<b>Esc／X</b> 打開選單、取消　<b>F</b> 全螢幕<br>
 遇到岔路時看看告示牌，各地的討論板也常有島民留下的情報；魔王準備大招時記得「防禦」。打不贏就發動島民技能「無視」。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。</p>
 <section class="about" id="about">
   <h2>關於這個網站</h2>
