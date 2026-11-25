@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>糟糕島物語</title>
+<style>
+/* VOICE: 熱鬧又帶點寂寞的匿名島嶼，像素 JRPG
+   IDEA: 一台放在深夜書桌上的掌機，螢幕裡是一座由回應堆成的島
+   PICTURE: 遊戲畫面本身，佔滿第一屏
+   COLOUR and TYPE: 深夜藍紫 #120e24、羊皮紙白 #f4ecd8、推文金 #ffd54a；系統黑體
+   LAYOUT: 小標題 → 機身（畫面）→ 按鈕與操作說明 */
+:root{color-scheme:dark;--bg:#0e0b16;--ink:#f4ecd8;--gold:#ffd54a;--panel:#18122e;--edge:#5a4a8a}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:radial-gradient(ellipse at 50% 0%,#2a1f4a 0%,#0e0b16 62%) fixed;color:var(--ink);font:16px/1.55 "Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;overflow-x:clip}
+img,.tile{image-rendering:pixelated}
+header{text-align:center;padding:16px 16px 8px}
+header h1{margin:0;font-size:30px;line-height:1.1;letter-spacing:6px;color:#ffe9a8;text-shadow:0 0 14px #ffb84a77}
+header p{margin:4px 0 0;color:#a89cc8;font-size:14px}
+.stage{margin:0 auto;position:relative}
+.frame{width:774px;position:absolute;left:0;top:0;transform-origin:top left}
+#scr{position:relative;width:774px;height:582px;overflow:hidden;border:3px solid var(--ink);border-radius:6px;background:#000;user-select:none}
+#maplayer{position:absolute;left:0;top:0;transition:transform .14s linear;will-change:transform}
+#maplayer.noanim,#maplayer.noanim .sprite{transition:none}
+#tiles{position:relative}
+.tile{position:absolute;width:48px;height:48px;background-size:48px 48px}
+.sprite{position:absolute;width:48px;height:48px;z-index:2;transition:left .14s linear,top .14s linear}
+.sprite.pl{z-index:3}.flip{transform:scaleX(-1)}
+#alt{position:absolute;inset:0}
+#ov,#bn{position:absolute;inset:0;pointer-events:none}
+#ov .menu,#ov .dialog{pointer-events:auto}
+.banner{position:absolute;top:18px;left:50%;transform:translateX(-50%);background:#000b;border:2px solid var(--ink);border-radius:6px;padding:6px 28px;font-size:22px;letter-spacing:6px;white-space:nowrap;animation:fade 2.6s forwards}
+/* 對話 */
+.dialog{position:absolute;left:14px;right:14px;bottom:14px;min-height:124px;padding:22px 24px 16px;z-index:20;background:#14102cf2;border:3px solid var(--ink);border-radius:10px;font-size:20px;line-height:1.7;cursor:pointer}
+.dialog.nar .dt{color:#d8d0ff}
+.spk{position:absolute;top:-17px;left:16px;background:#3a2a6a;border:2px solid var(--ink);border-radius:6px;padding:0 12px;font-size:16px;color:var(--gold)}
+.nx{position:absolute;right:16px;bottom:8px;font-size:14px;animation:bob .8s infinite}
+/* 選單 */
+.mwrap{position:absolute;inset:0;display:flex;gap:10px;padding:14px;align-items:flex-start;z-index:15}
+.mwrap.cascade{display:block}.casc{position:absolute}.cascade .psum{position:absolute;right:14px;top:14px}
+.mwrap.centered{justify-content:center;align-items:flex-end;padding-bottom:70px}
+.menu{background:#120e26f2;border:3px solid #8a7ab8;border-radius:10px;min-width:180px;max-height:540px;display:flex;flex-direction:column;box-shadow:0 6px 18px #0008}
+.menu.active{border-color:var(--ink)}
+.mt{padding:6px 14px;border-bottom:1px solid #ffffff22;color:var(--gold);font-size:15px;display:flex;justify-content:space-between;gap:12px}
+.menu ul{list-style:none;margin:0;padding:6px;overflow:auto}
+.menu li{display:flex;justify-content:space-between;gap:14px;padding:5px 10px 5px 26px;border-radius:6px;font-size:17px;cursor:pointer;position:relative;white-space:nowrap}
+.menu li em{font-style:normal;color:#c8c0e8;font-size:15px}
+.menu li.sel{background:#ffffff14}
+.menu.active li.sel::before{content:"▶";position:absolute;left:8px;color:var(--gold);font-size:13px;top:8px}
+.menu li.dis{opacity:.4}
+.md{padding:8px 14px;border-top:1px solid #ffffff22;font-size:14px;color:#d8d0ff;max-width:420px;white-space:normal}
+.menu.wide{width:360px}
+.menu.choice{position:absolute;right:24px;bottom:160px}
+.menu.status{width:430px}.menu.quests{width:470px}
+.mwrap .menu.status ul,.mwrap .menu.quests ul{display:none}
+.psum{background:#120e26f2;border:3px solid #8a7ab8;border-radius:10px;padding:10px;width:300px;font-size:14px}
+.ps{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid #ffffff14}
+.ps img{width:40px;height:40px}
+.ps-f{display:flex;justify-content:space-between;padding-top:8px;color:var(--gold)}
+.ps-g{padding-top:6px;color:#c8c0e8;font-size:13px}
+.stat{padding:10px 14px;font-size:15px}
+.stat-top{display:flex;gap:10px;align-items:center}
+.stat-top img{width:56px;height:56px}
+.stat table{border-collapse:collapse;margin:8px 0;width:100%}
+.stat th{text-align:left;color:#a89cc8;font-weight:normal;width:70px}
+.stat td{text-align:right;font-variant-numeric:tabular-nums}
+.eq div{padding:1px 0}
+.sk{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.sk span{background:#ffffff12;border-radius:4px;padding:1px 6px;font-size:13px}
+.quest{padding:10px 14px;max-height:430px;overflow:auto}
+.goal{background:#ffffff10;border-radius:6px;padding:6px 10px;margin-bottom:8px}
+.ql{list-style:none;padding:0;margin:0}.ql li{padding:6px 0;border-bottom:1px solid #ffffff14;font-size:15px}
+.ql li.done{opacity:.6}
+.toasts{position:absolute;top:70px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;align-items:center;z-index:30}
+.toasts div{background:#000c;border:1px solid var(--gold);color:var(--gold);border-radius:6px;padding:4px 14px;font-size:15px;white-space:nowrap}
+/* 全畫面 */
+.full{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:70px;text-align:center;
+  background:radial-gradient(2px 2px at 10% 20%,#fff,transparent),radial-gradient(2px 2px at 30% 70%,#fff,transparent),radial-gradient(1px 1px at 55% 15%,#fff,transparent),radial-gradient(2px 2px at 80% 40%,#fff,transparent),radial-gradient(1px 1px at 90% 80%,#fff,transparent),radial-gradient(1px 1px at 65% 60%,#fff,transparent),radial-gradient(ellipse at 50% 120%,#3a2a6a 0%,#120e24 60%,#07050d 100%)}
+.full h1{font-size:58px;margin:6px 0 0;letter-spacing:12px;color:#ffe9a8;text-shadow:0 0 18px #ffb84a,4px 4px 0 #3a1a5a;line-height:1.1}
+.full .sub{color:#c8b8f0;margin:6px 0 0;font-size:20px;letter-spacing:3px}
+.full .hint{color:#7a70a0;font-size:13px;margin-top:4px}
+.t-hero{width:96px;height:96px;animation:float 3s ease-in-out infinite}
+.over h2{margin-top:150px;font-size:40px;letter-spacing:10px;color:#ff8080}
+.ending.dim h2{margin-top:40px;font-size:30px;letter-spacing:8px;color:#ffe9a8}
+.post{margin-top:60px;background:#f0e0d6;color:#800000;text-align:left;padding:16px 24px;border-radius:4px;width:600px;font-size:18px;box-shadow:0 8px 30px #000a}
+.post-h{font-size:14px;color:#117743}.post-h b{color:#cc1105}.post-h .nm{color:#117743}
+.post p{margin:8px 0}.post .small{font-size:14px;color:#a05050}
+/* 戰鬥 */
+.bscreen{position:absolute;inset:0}
+.bscreen.intro{animation:enc .5s ease-out}
+.bg-field{background:linear-gradient(#5a9a5a,#2e5e36 58%,#1d3a24)}
+.bg-beach{background:linear-gradient(#5ab0e0,#3a7bd5 45%,#d8c48a 46%,#b89a5a)}
+.bg-forest{background:linear-gradient(#4a4470,#2a2848 55%,#16142a)}
+.bg-valley{background:linear-gradient(#e07a3a,#8a3a2a 55%,#3a1a1a)}
+.bg-port{background:linear-gradient(#7ab8e8,#2a5aa8 55%,#1a2a5a)}
+.bg-gallery{background:linear-gradient(#e8e4f0,#b0a8c8 55%,#5a4a7a)}
+.bg-fortress{background:linear-gradient(#a8b0c0,#5a6272 55%,#2a3040)}
+.bg-abyss{background:radial-gradient(ellipse at 50% 40%,#1a3a3a,#081014 60%,#000)}
+.bg-core{background:radial-gradient(ellipse at 50% 40%,#2a5a8a,#101a3a 60%,#05050d)}
+.log{position:absolute;top:8px;left:10px;right:10px;min-height:42px;background:#000a;border-radius:8px;padding:6px 14px;font-size:17px;line-height:1.55;z-index:3}
+.log div:last-child{color:#fff}.log div{color:#c8c0d8}
+.foes{position:absolute;top:122px;left:0;right:0;height:228px;display:flex;justify-content:center;align-items:flex-end;gap:22px}
+.foe{display:flex;flex-direction:column;align-items:center;transition:opacity .4s}
+.foe img{width:144px;height:144px}
+.foe.big img{width:200px;height:200px;filter:drop-shadow(0 0 16px #b06aff)}
+.foe-name{font-size:14px;background:#0008;border-radius:4px;padding:0 8px;white-space:nowrap}
+.foe .bar{width:110px}
+.foe.dead{opacity:0}
+.foe.hi img,.pc.hi{outline:3px solid var(--gold);outline-offset:2px;border-radius:6px}
+.foe.hit img{animation:hit .26s}
+.badges{min-height:18px;display:flex;gap:3px}
+.badge{font-size:11px;padding:0 4px;border-radius:3px;background:var(--c);color:#111;font-weight:bold;line-height:16px}
+.bpanel{position:absolute;left:0;right:0;bottom:0;height:222px;background:#0c0a1cf0;border-top:3px solid var(--ink);display:flex}
+.party{width:440px;padding:6px 8px;display:flex;flex-direction:column;gap:3px}
+.pc{display:flex;gap:8px;align-items:center;padding:2px 6px;border-radius:6px;border:2px solid transparent}
+.pc img{width:44px;height:44px}
+.pc.act{border-color:var(--gold);background:#ffffff10}
+.pc.ko{opacity:.45}.pc.ko img{transform:rotate(90deg)}
+.pc.hit{animation:shake .26s}.pc.heal img,.foe.heal img{animation:glow .3s}
+.pc-b{flex:1}
+.pc-n{font-size:14px;display:flex;gap:6px;align-items:center}
+.pc-r{display:flex;align-items:center;gap:6px;font-size:12px;color:#a89cc8}
+.pc-r span{width:40px;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+.bar{display:inline-block;height:8px;background:#2a2238;border:1px solid #ffffff55;border-radius:3px;overflow:hidden;width:150px}
+.bar>span{display:block;height:100%;transition:width .3s}
+.bar.hp>span{background:#5fd35f}.bar.mp>span{background:#4aa8ff}.bar.en>span{background:#ff5a5a}
+.bmenu{position:absolute;right:10px;bottom:10px;width:310px;z-index:12}
+.bmenu .menu{max-height:204px;min-width:0}
+.bmenu .menu.wide{width:310px}
+.bmenu .md{font-size:13px}
+.okp{position:absolute;right:30px;bottom:90px;font-size:18px;animation:bob .8s infinite;z-index:12}
+/* 操作 */
+.controls{display:flex;align-items:center;justify-content:center;gap:24px;padding:12px 16px 6px;flex-wrap:wrap}
+.dpad{display:grid;grid-template-columns:repeat(3,48px);grid-template-rows:repeat(3,48px);gap:2px}
+.dpad button,.abtn{background:var(--panel);color:var(--ink);border:2px solid var(--edge);border-radius:10px;cursor:pointer;font-size:18px;touch-action:manipulation}
+.u{grid-area:1/2}.l{grid-area:2/1}.r{grid-area:2/3}.d{grid-area:3/2}
+.abtns{display:flex;gap:10px;align-items:center}
+.abtn{width:64px;height:64px;border-radius:50%;font-size:20px;font-weight:bold}
+.abtn.b{width:52px;height:52px;font-size:16px}
+.abtn.m{width:auto;height:40px;border-radius:20px;padding:0 14px;font-size:15px}
+button:focus-visible{outline:3px solid var(--gold)}
+.dpad button:active,.abtn:active{background:#3a2a6a}
+.help{color:#a89cc8;font-size:14px;text-align:center;max-width:680px;margin:0 auto;padding:0 16px 28px}
+.help b{color:var(--ink);font-weight:normal}
+.loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:20px;letter-spacing:4px}
+@keyframes fade{0%,70%{opacity:1}100%{opacity:0}}
+@keyframes bob{50%{transform:translateY(4px)}}
+@keyframes float{50%{transform:translateY(-6px)}}
+@keyframes hit{25%{opacity:.2;transform:translateX(-8px)}50%{opacity:1}75%{opacity:.2;transform:translateX(8px)}}
+@keyframes shake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+@keyframes glow{50%{filter:brightness(2) drop-shadow(0 0 8px #8f8)}}
+@keyframes enc{0%{filter:brightness(4) contrast(2);transform:scale(1.08)}}
+@media (max-width:520px){.controls{gap:12px}.dpad{grid-template-columns:repeat(3,42px);grid-template-rows:repeat(3,42px)}.abtn{width:56px;height:56px}.abtn.b{width:46px;height:46px}.abtn.m{height:36px;padding:0 10px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>糟糕島物語</h1>
+  <p>～無名氏與最後的回應～　K 島背景的網頁 JRPG（Blazor 專案的網頁預覽版）</p>
+</header>
+<div class="stage" id="stage">
+  <div class="frame" id="frame">
+    <div id="scr">
+      <div id="maplayer" hidden></div>
+      <div id="alt"><div class="loading">載入中…</div></div>
+      <div id="bn"></div>
+      <div id="ov"></div>
+    </div>
+  </div>
+</div>
+<div class="controls">
+  <div class="dpad">
+    <button class="u" data-btn="up" aria-label="上">▲</button>
+    <button class="l" data-btn="left" aria-label="左">◀</button>
+    <button class="r" data-btn="right" aria-label="右">▶</button>
+    <button class="d" data-btn="down" aria-label="下">▼</button>
+  </div>
+  <div class="abtns">
+    <button class="abtn b" data-btn="back" aria-label="取消">B</button>
+    <button class="abtn" data-btn="ok" aria-label="確認">A</button>
+    <button class="abtn m" data-btn="menu">選單</button>
+  </div>
+</div>
+<p class="help"><b>方向鍵／WASD</b> 移動、選擇　<b>Enter／空白鍵／Z</b> 調查、對話、確認　<b>Esc／X</b> 打開選單、取消<br>
+遇到岔路時看看告示牌；魔王準備大招時記得「防禦」。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。</p>
+<script src="game.js"></script>
+<script>
+{
+  const stage = document.getElementById('stage'), frame = document.getElementById('frame');
+  const fit = () => {
+    const k = Math.min(1, (document.documentElement.clientWidth - 16) / 774);
+    frame.style.transform = `scale(${k})`;
+    stage.style.width = 774 * k + 'px';
+    stage.style.height = 582 * k + 'px';
+  };
+  const ro = new ResizeObserver(fit);
+  ro.observe(document.documentElement);
+  fit();
+}
+</script>
+</body>
+</html>
