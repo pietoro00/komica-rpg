@@ -38,7 +38,7 @@ function skillsOf(a) { return ad(a).skills.filter(([lv]) => lv <= a.level).map((
 function immunesOf(a) { const acc = a.equip.acc; return (acc && D.items[acc].immune) || []; }
 function makeActor(id, level) {
   const d = D.actors[id];
-  const a = { id, level, exp: expFor(level), hp: 0, mp: 0, equip: Object.assign({}, d.equip) };
+  const a = { id, level, exp: expFor(level), hp: 0, mp: 0, equip: Object.assign({}, d.equip), st: {} };
   a.hp = maxHp(a); a.mp = maxMp(a);
   return a;
 }
@@ -1202,7 +1202,9 @@ function renderMap() {
   layer.style.transform = `translate(${-cx * T}px,${-cy * T}px)`;
   el('ents').innerHTML = visibleEnts().map(e => {
     const sp = e.chest ? (S.flags[chestFlag(e)] ? 'chest_open' : 'chest') : e.sprite;
-    return `<img class="sprite" src="img/${sp}.png" alt="" style="left:${e.x * T}px;top:${e.y * T}px">`;
+    // 頭上的「！」：提示現在該找這個人說話
+    const mark = e.mark && cond(e.mark) ? `<div class="mark" style="left:${e.x * T}px;top:${e.y * T - 32}px">！</div>` : '';
+    return `<img class="sprite" src="img/${sp}.png" alt="" style="left:${e.x * T}px;top:${e.y * T}px">${mark}`;
   }).join('');
   const pl = el('pl');
   const src = `img/${heroSprite()}.png`;

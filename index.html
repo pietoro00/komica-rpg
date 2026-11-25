@@ -25,6 +25,7 @@ header p{margin:4px 0 0;color:#a89cc8;font-size:14px}
 #tiles{position:relative}
 .tile{position:absolute;width:48px;height:48px;background-size:48px 48px}
 .sprite{position:absolute;width:48px;height:48px;z-index:2;transition:left .14s linear,top .14s linear}
+.mark{position:absolute;width:30px;height:30px;margin-left:9px;text-align:center;z-index:4;pointer-events:none;background:#fff;color:#e0302a;border:3px solid #1a1420;border-radius:50% 50% 50% 8px;font-size:20px;font-weight:bold;line-height:24px;box-shadow:0 2px 4px #0008;animation:float 1s ease-in-out infinite}
 .sprite.pl{z-index:3}.flip{transform:scaleX(-1)}
 #alt{position:absolute;inset:0}
 #ov,#bn{position:absolute;inset:0;pointer-events:none}
@@ -209,7 +210,7 @@ body.fs .fsx{display:block;position:fixed;z-index:51;top:calc(10px + env(safe-ar
 .about{max-width:680px;margin:0 auto 40px;padding:16px 20px;background:#18122eb3;border:1px solid #5a4a8a;border-radius:10px;font-size:14px;color:#c8c0e8}
 .about h2{margin:0 0 8px;font-size:17px;color:var(--ink)}
 .about ul{margin:6px 0 10px;padding-left:20px}.about li{margin:4px 0}
-.about b{color:var(--ink);font-weight:bold}.about a{color:var(--gold)}
+.about b{color:var(--ink);font-weight:bold}.about .ver{margin:10px 0 0;font-size:12px;color:#8a80a8}.about a{color:var(--gold)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -261,6 +262,7 @@ body.fs .fsx{display:block;position:fixed;z-index:51;top:calc(10px + env(safe-ar
     <li>也可以把這個網址貼到 VirusTotal 等網站安全檢查服務，用多家防毒引擎掃描。</li>
   </ul>
   <p>本站無毒，請安心回文。看完覺得不錯，推；沒什麼想說的，閱也可以。</p>
+  <p class="ver">版本 2026.11.25-8　回報問題時請附上這個版本號。</p>
 </section>
 <script src="game.js"></script>
 </body>
