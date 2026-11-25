@@ -285,7 +285,16 @@ function walkable(x, y) {
 }
 function tileAt(x, y) { const m = curMap(); return (m.rows[y] || '')[x]; }
 
-let lastMove = 0;
+let lastMove = 0, walkAlt = 0, walkTimer = 0;
+/* 主角的圖：依面向選正面／背面／側面（朝左時把側面左右翻轉），走路時短暫換成跨步的圖 */
+const HERO_FRAMES = { D: ['hero', 'hero_d1', 'hero_d2'], U: ['hero_back', 'hero_u1', 'hero_u2'], R: ['hero_side', 'hero_s1', 'hero_s2'], L: ['hero_side', 'hero_s1', 'hero_s2'] };
+function heroSprite() { return (HERO_FRAMES[S.dir] || HERO_FRAMES.D)[S.walk || 0]; }
+function stepAnim() {
+  walkAlt = walkAlt === 1 ? 2 : 1;
+  S.walk = walkAlt;
+  clearTimeout(walkTimer);
+  walkTimer = setTimeout(() => { S.walk = 0; if (S.mode === 'map') render(); }, 120);
+}
 function tryMove(dir) {
   const now = performance.now();
   if (now - lastMove < 135) return;
@@ -295,6 +304,7 @@ function tryMove(dir) {
   const nx = S.x + dx, ny = S.y + dy;
   if (!walkable(nx, ny) || entAt(nx, ny)) { render(); return; }
   S.x = nx; S.y = ny;
+  stepAnim();
   const w = curMap().warps.find(w => w[0] === nx && w[1] === ny);
   if (w) {
     teleport(w[2], w[3], w[4], w[5]);
@@ -1189,7 +1199,8 @@ function renderMap() {
     return `<img class="sprite" src="img/${sp}.png" alt="" style="left:${e.x * T}px;top:${e.y * T}px">`;
   }).join('');
   const pl = el('pl');
-  pl.src = `img/${S.dir === 'U' ? 'hero_back' : 'hero'}.png`;
+  const src = `img/${heroSprite()}.png`;
+  if (pl.getAttribute('src') !== src) pl.setAttribute('src', src);
   pl.classList.toggle('flip', S.dir === 'L');
   pl.style.left = S.x * T + 'px';
   pl.style.top = S.y * T + 'px';
@@ -1357,6 +1368,8 @@ async function boot() {
   D = await res.json();
   bspeed = meta().speed || 0;
   S = freshState();
+  // 先載入主角的所有方向與走路圖，換圖時才不會閃一下
+  for (const n of new Set(Object.values(HERO_FRAMES).flat())) new Image().src = `img/${n}.png`;
   toTitle();
   window.addEventListener('keydown', e => {
     const b = KEYS[e.key];
