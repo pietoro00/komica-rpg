@@ -1311,6 +1311,46 @@ function press(btn, repeat) {
   else if (btn === 'back' || btn === 'menu') openMainMenu();
 }
 
+/* ---------------------------------------------------------------- 按住連續輸入
+   鍵盤方向鍵與畫面上的十字鍵共用：按下立刻動一次，按住不放就持續觸發。
+   在地圖上每 140 毫秒走一格；在選單裡先停 280 毫秒，之後每 90 毫秒移動一次游標。 */
+const held = [];   // { src, btn }，最後一個是目前生效的方向
+let holdTimer = 0;
+function holdMenuish() { return !!(S && (S.menus.length || S.board || S.mode !== 'map')); }
+function holdLoop(first) {
+  clearTimeout(holdTimer);
+  if (!held.length) return;
+  if (!first) press(held[held.length - 1].btn, true);
+  holdTimer = setTimeout(() => holdLoop(false), holdMenuish() ? (first ? 280 : 90) : 140);
+}
+function holdStart(src, btn) {
+  const i = held.findIndex(h => h.src === src);
+  if (i >= 0) held.splice(i, 1);
+  held.push({ src, btn });
+  press(btn, false);
+  holdLoop(true);
+  holdMark();
+}
+function holdMove(src, btn) {
+  const h = held.find(h => h.src === src);
+  if (!h || h.btn === btn) return;
+  h.btn = btn;
+  if (held[held.length - 1] === h) { press(btn, false); holdLoop(true); }
+  holdMark();
+}
+function holdEnd(src) {
+  const i = held.findIndex(h => h.src === src);
+  if (i < 0) return;
+  held.splice(i, 1);
+  if (!held.length) clearTimeout(holdTimer);
+  holdMark();
+}
+function holdClear() { held.length = 0; clearTimeout(holdTimer); holdMark(); }
+function holdMark() {
+  const cur = held.length ? held[held.length - 1].btn : '';
+  document.querySelectorAll('.dpad [data-btn]').forEach(b => b.classList.toggle('on', b.dataset.btn === cur));
+}
+
 /* ================================================================ 啟動 */
 async function boot() {
   const res = await fetch('data/game.json');
@@ -1322,10 +1362,29 @@ async function boot() {
     const b = KEYS[e.key];
     if (!b) return;
     e.preventDefault();
+    // 方向鍵：自己控制按住時的連續輸入，不依賴系統的按鍵重複（避免第一步後卡一下）
+    if (DIRK[b]) { if (!held.some(h => h.src === 'k' + e.code)) holdStart('k' + e.code, b); return; }
     press(b, e.repeat);
   });
+  window.addEventListener('keyup', e => holdEnd('k' + e.code));
+  window.addEventListener('blur', holdClear);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) holdClear(); });
   document.querySelectorAll('[data-btn]').forEach(btn => {
-    btn.addEventListener('click', () => press(btn.dataset.btn, false));
+    const b = btn.dataset.btn;
+    if (!(DIRK[b] && btn.closest('.dpad'))) { btn.addEventListener('click', () => press(b, false)); return; }
+    // 畫面上的十字鍵：按住持續移動，手指滑到別的方向也會跟著轉向
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      try { btn.setPointerCapture(e.pointerId); } catch (_) { /* 舊瀏覽器沒有也能用 */ }
+      holdStart('p' + e.pointerId, b);
+    });
+    btn.addEventListener('pointermove', e => {
+      const t = document.elementFromPoint(e.clientX, e.clientY);
+      const nb = t && t.closest('.dpad [data-btn]');
+      if (nb) holdMove('p' + e.pointerId, nb.dataset.btn);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) btn.addEventListener(ev, e => holdEnd('p' + e.pointerId));
+    btn.addEventListener('contextmenu', e => e.preventDefault());
   });
   el('ov').addEventListener('click', e => {
     const li = e.target.closest('li[data-i]');
