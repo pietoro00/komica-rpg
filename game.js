@@ -100,7 +100,8 @@ function condTerm(t) {
   return false;
 }
 function cond(c) { return !c || c.split('|').some(alt => alt.split('&').every(condTerm)); }
-function fmt(s) { return s.replace(/\{item:(\w+)\}/g, (_, id) => itemCount(id)); }
+// 對話裡的 {item:道具} 換成持有數量，{goal} 換成目前目標
+function fmt(s) { return s.replace(/\{item:(\w+)\}/g, (_, id) => itemCount(id)).replace(/\{goal\}/g, () => S.goal || '……'); }
 
 /* ================================================================ 狀態 */
 function freshState() {
