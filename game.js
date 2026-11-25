@@ -11,6 +11,10 @@ const STOP = Symbol('stop');
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let SPEED = 1, GOD = false;
+/* 簡單模式的倍率：敵人 HP、我方受到的傷害、經驗值與 K 幣 */
+const EASY = { enemyHp: 0.7, dmgTaken: 0.6, reward: 1.5 };
+/* 明雷怪的經驗值與 K 幣倍率：怪物看得到、躲得掉，遇到的場數比以前的暗雷少，用這個補回升級速度 */
+const MON_REWARD = 1.8;
 const BSPEEDS = [1, 0.6, 0.35], BSPEED_NAMES = ['普通', '快', '超快'];
 let bspeed = 0;
 const bwait = ms => wait(ms * BSPEEDS[bspeed]);
@@ -103,7 +107,8 @@ function freshState() {
   return {
     mode: 'title', mapId: 'village', x: 0, y: 0, dir: 'D', party: [], inv: {}, gold: 0, flags: {}, karma: 0,
     quests: {}, goal: '', playTime: 0, busy: false, menus: [], dialog: null, toasts: [], banner: null, bannerId: 0,
-    battle: null, ending: null, steps: 0, waitOk: null, dex: {}, visited: {}, card: null, board: null,
+    battle: null, ending: null, waitOk: null, dex: {}, visited: {}, card: null, board: null,
+    easy: false, mons: [], invuln: 0,
   };
 }
 const curMap = () => D.maps[S.mapId];
@@ -114,7 +119,7 @@ function fullHeal() { for (const a of S.party) { a.hp = maxHp(a); a.mp = maxMp(a
 function saveGame() {
   const data = {
     v: 1, mapId: S.mapId, x: S.x, y: S.y, dir: S.dir, gold: S.gold, inv: S.inv, flags: S.flags, karma: S.karma,
-    quests: S.quests, goal: S.goal, playTime: S.playTime, dex: S.dex, visited: S.visited,
+    quests: S.quests, goal: S.goal, playTime: S.playTime, dex: S.dex, visited: S.visited, easy: !!S.easy,
     party: S.party.map(a => ({ id: a.id, level: a.level, exp: a.exp, hp: a.hp, mp: a.mp, equip: a.equip })),
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; }
@@ -126,9 +131,10 @@ function loadGame() {
   if (!data) return false;
   S = freshState();
   Object.assign(S, { mapId: data.mapId, x: data.x, y: data.y, dir: data.dir, gold: data.gold, inv: data.inv, flags: data.flags,
-    karma: data.karma, quests: data.quests, goal: data.goal, playTime: data.playTime, mode: 'map', dex: data.dex || {}, visited: data.visited || {} });
+    karma: data.karma, quests: data.quests, goal: data.goal, playTime: data.playTime, mode: 'map', dex: data.dex || {}, visited: data.visited || {}, easy: !!data.easy });
   S.party = data.party.map(p => Object.assign({ st: {} }, p));
   built = null;
+  spawnMons();
   return true;
 }
 function meta() { try { return JSON.parse(localStorage.getItem(META_KEY)) || { endings: [] }; } catch (e) { return { endings: [] }; } }
@@ -277,8 +283,88 @@ function teleport(mapId, x, y, dir) {
   S.mapId = mapId; S.x = x; S.y = y; S.dir = dir;
   S.visited[mapId] = true;
   S.banner = D.maps[mapId].name; S.bannerId++;
-  S.steps = 0;
   S.pendingAuto = true;
+  spawnMons();
+}
+
+/* ---------------------------------------------------------------- 明雷：地圖上看得到的怪物
+   進入有怪物的地圖時，在離玩家遠一點的地方放幾隻怪。牠們平常亂晃，玩家靠近就會追過來；
+   碰到就開戰。打贏的怪在離開地圖前不會再出現；用「無視」逃走時，那隻怪會暫時不追人。 */
+let MONS_ON = true;  // 測試用開關
+const monAt = (x, y) => S.mons.find(m => m.x === x && m.y === y);
+const warpAt = (x, y) => curMap().warps.some(w => w[0] === x && w[1] === y);
+function monFree(x, y) { return walkable(x, y) && !entAt(x, y) && !warpAt(x, y) && !monAt(x, y) && !(x === S.x && y === S.y); }
+function monCount(walkTiles) { const n = clamp(Math.round(walkTiles / 45), 3, 9); return S.easy ? Math.max(2, n - 3) : n; }
+function pickTroop(enc) {
+  const total = enc.troops.reduce((s, t) => s + t[1], 0);
+  let r = Math.random() * total;
+  for (const [id, w] of enc.troops) { r -= w; if (r < 0) return id; }
+  return enc.troops[0][0];
+}
+function spawnMons() {
+  S.mons = [];
+  const m = curMap(), enc = m.enc;
+  if (!enc || !MONS_ON) return;
+  const walk = [];
+  m.rows.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (D.tiles[row[x]][1] === 1) walk.push([x, y]); });
+  const cand = walk.filter(([x, y]) => Math.abs(x - S.x) + Math.abs(y - S.y) >= 6 && monFree(x, y));
+  const now = performance.now();
+  for (let i = 0, n = monCount(walk.length); i < n && cand.length; i++) {
+    const [x, y] = cand.splice(rnd(cand.length), 1)[0];
+    const troop = pickTroop(enc);
+    // 地圖上顯示這一組裡最強（HP 最高）的怪
+    const lead = D.troops[troop].reduce((a, b) => (D.enemies[b].hp > D.enemies[a].hp ? b : a));
+    S.mons.push({ id: 'm' + i + '_' + Math.random().toString(36).slice(2, 7), x, y, troop, sprite: D.enemies[lead].sprite || lead, next: now + 600 + Math.random() * 1200, calm: 0, chasing: false });
+  }
+}
+function monIdle() { return MONS_ON && S && S.mode === 'map' && !S.busy && !S.menus.length && !S.dialog && !S.board && !S.card; }
+function monTick() {
+  if (!monIdle() || !S.mons.length) return;
+  const now = performance.now();
+  let acted = false;
+  for (const m of S.mons) {
+    if (now < m.next) continue;
+    acted = true;
+    const dist = Math.abs(m.x - S.x) + Math.abs(m.y - S.y);
+    m.chasing = dist <= (S.easy ? 3 : 6) && now >= m.calm;
+    let dirs;
+    if (m.chasing) {
+      const sx = Math.sign(S.x - m.x), sy = Math.sign(S.y - m.y);
+      dirs = Math.abs(S.x - m.x) >= Math.abs(S.y - m.y) ? [[sx, 0], [0, sy]] : [[0, sy], [sx, 0]];
+      dirs = dirs.filter(([a, b]) => a || b);
+      m.next = now + (S.easy ? 520 : 300);
+    } else {
+      m.next = now + 700 + Math.random() * 900;
+      if (Math.random() < 0.45) continue;
+      dirs = [[[1, 0], [-1, 0], [0, 1], [0, -1]][rnd(4)]];
+    }
+    for (const [ax, ay] of dirs) {
+      const nx = m.x + ax, ny = m.y + ay;
+      if (nx === S.x && ny === S.y) {
+        if (now >= S.invuln) { renderMons(); encounter(m); return; }
+        continue;
+      }
+      if (monFree(nx, ny)) { m.x = nx; m.y = ny; break; }
+    }
+  }
+  if (acted) renderMons();
+}
+function encounter(m) {
+  if (S.busy || S.mode !== 'map') return;
+  S.busy = true;
+  holdClear();
+  (async () => {
+    try {
+      const r = await battle(m.troop, { mon: true });
+      if (r === 'lose') { await gameOver(); return; }
+      if (r === 'win') S.mons = S.mons.filter(x => x !== m);
+      else m.calm = performance.now() + 4000;   // 無視成功：這隻怪暫時不追
+      S.invuln = performance.now() + 1500;      // 剛打完的一小段時間不會再被碰到
+    } finally {
+      if (S.mode === 'map' || S.mode === 'battle') S.busy = false;
+      render();
+    }
+  })();
 }
 const STEP = { U: [0, -1], D: [0, 1], L: [-1, 0], R: [1, 0] };
 function visibleEnts() { return curMap().ents.filter(e => cond(e.show)); }
@@ -308,6 +394,8 @@ function tryMove(dir) {
   const [dx, dy] = STEP[dir];
   const nx = S.x + dx, ny = S.y + dy;
   if (!walkable(nx, ny) || entAt(nx, ny)) { render(); return; }
+  const mon = monAt(nx, ny);
+  if (mon) { render(); if (now >= S.invuln) encounter(mon); return; }
   S.x = nx; S.y = ny;
   stepAnim();
   const w = curMap().warps.find(w => w[0] === nx && w[1] === ny);
@@ -319,17 +407,6 @@ function tryMove(dir) {
     return;
   }
   render();
-  const enc = curMap().enc;
-  if (enc) {
-    S.steps++;
-    if (S.steps >= 5 && Math.random() * 100 < enc.rate) {
-      S.steps = 0;
-      const total = enc.troops.reduce((s, t) => s + t[1], 0);
-      let r = Math.random() * total, pick = enc.troops[0][0];
-      for (const [id, wgt] of enc.troops) { r -= wgt; if (r < 0) { pick = id; break; } }
-      runBusy([['battle', pick, {}]]);
-    }
-  }
 }
 function interact() {
   const [dx, dy] = STEP[S.dir];
@@ -446,9 +523,14 @@ function menuTravel() {
 function menuSettings() {
   pushMenu({
     title: '設定', cls: 'wide',
-    build: () => [{ label: '戰鬥速度', right: BSPEED_NAMES[bspeed], desc: '按 Enter 切換。設定會記在這台裝置上。' }, { label: '返回' }],
-    onPick: i => {
-      if (i === 1) { popMenu(); return; }
+    build: () => [
+      { id: 'speed', label: '戰鬥速度', right: BSPEED_NAMES[bspeed], desc: '按 Enter 切換。設定會記在這台裝置上。' },
+      { id: 'easy', label: '難度', right: S.easy ? '簡單' : '普通', desc: '按 Enter 切換，會跟著存檔記錄。簡單：敵人比較弱、受到的傷害較少、經驗值與 K 幣 1.5 倍、「無視」一定成功、怪物比較少也不太追人。' },
+      { id: 'back', label: '返回' },
+    ],
+    onPick: (i, it) => {
+      if (it.id === 'back') { popMenu(); return; }
+      if (it.id === 'easy') { S.easy = !S.easy; toast(S.easy ? '難度改為「簡單」' : '難度改為「普通」'); render(); return; }
       bspeed = (bspeed + 1) % BSPEEDS.length;
       const m = meta(); m.speed = bspeed; saveMeta(m);
       render();
@@ -629,7 +711,8 @@ function openShop(shopId) {
 /* ================================================================ 戰鬥 */
 function newEnemy(id, label) {
   const def = D.enemies[id];
-  return { uid: Math.random().toString(36).slice(2), side: 'enemy', id, def, name: def.name + label, hp: def.hp, maxHp: def.hp, st: {}, lowUsed: false, fx: '' };
+  const hp = S.easy ? Math.max(1, Math.round(def.hp * EASY.enemyHp)) : def.hp;  // 簡單模式：敵人 HP 較少
+  return { uid: Math.random().toString(36).slice(2), side: 'enemy', id, def, name: def.name + label, hp, maxHp: hp, st: {}, lowUsed: false, fx: '' };
 }
 const aliveParty = () => S.party.filter(alive);
 const aliveEnemies = () => S.battle.enemies.filter(alive);
@@ -670,7 +753,7 @@ async function battle(troopId, opts = {}) {
     seen[id] = (seen[id] || 0) + 1;
     return newEnemy(id, counts[id] > 1 ? ' ' + 'ABCD'[seen[id] - 1] : '');
   });
-  const B = S.battle = { enemies, turn: 0, log: [], bg: curMap().bg, noFlee: !!opts.noFlee || enemies.some(e => e.def.boss), actor: -1, hi: null, intro: true, gauge: 0, comboQueued: false };
+  const B = S.battle = { enemies, turn: 0, log: [], bg: curMap().bg, mon: !!opts.mon, noFlee: !!opts.noFlee || enemies.some(e => e.def.boss), actor: -1, hi: null, intro: true, gauge: 0, comboQueued: false };
   for (const e of enemies) dexEntry(e.id).seen = true;
   for (const a of S.party) { a.st = {}; a.guard = false; a.fx = ''; }
   S.mode = 'battle';
@@ -689,7 +772,7 @@ async function battle(troopId, opts = {}) {
     if (acts === 'flee') {
       const ps = aliveParty().reduce((s, a) => s + uStat(a, 'spd'), 0) / aliveParty().length;
       const es = aliveEnemies().reduce((s, e) => s + e.def.spd, 0) / aliveEnemies().length;
-      if (Math.random() < clamp(0.55 + (ps - es) * 0.02, 0.3, 0.9)) { await msg('發動島民技能「無視」，成功離開了這串！'); result = 'flee'; break; }
+      if (S.easy || Math.random() < clamp(0.55 + (ps - es) * 0.02, 0.3, 0.9)) { await msg('發動島民技能「無視」，成功離開了這串！'); result = 'flee'; break; }
       await msg('無視失敗！被拉回串裡了！');
       acts = [];
     }
@@ -724,8 +807,10 @@ function checkEnd() {
 }
 async function victory() {
   const B = S.battle;
-  const exp = B.enemies.reduce((s, e) => s + (e.def.exp || 0), 0);
-  const gold = B.enemies.reduce((s, e) => s + (e.def.gold || 0), 0);
+  // 地圖上的怪物可以躲開，打到的那幾場給比較多；簡單模式再多一些
+  const mul = (B.mon ? MON_REWARD : 1) * (S.easy ? EASY.reward : 1);
+  const exp = Math.round(B.enemies.reduce((s, e) => s + (e.def.exp || 0), 0) * mul);
+  const gold = Math.round(B.enemies.reduce((s, e) => s + (e.def.gold || 0), 0) * mul);
   for (const e of B.enemies) if (e.hp <= 0) dexEntry(e.id).killed++;
   await msg('戰鬥勝利！大家辛苦乙！', 500);
   if (exp || gold) await msg(`獲得 ${exp} 經驗值、${gold} K 幣。`, 500);
@@ -949,6 +1034,7 @@ async function doCombo(id) {
   }
 }
 async function applyDamage(u, t, dmg, note, elem) {
+  if (S.easy && !isEnemy(t)) dmg = Math.round(dmg * EASY.dmgTaken);  // 簡單模式：我方受到的傷害較少
   if (t.guard) dmg = Math.round(dmg * 0.5);
   dmg = Math.max(1, dmg);
   if (GOD && !isEnemy(t)) dmg = 1;
@@ -1073,7 +1159,7 @@ async function endOfRound() {
   for (const u of [...aliveParty(), ...aliveEnemies()]) {
     u.guard = false;
     if (u.st.burn) {
-      const d = isEnemy(u) ? Math.min(Math.floor(u.maxHp * 0.05), 90) : Math.floor(maxHp(u) * 0.06);
+      const d = isEnemy(u) ? Math.min(Math.floor(u.maxHp * 0.05), 90) : Math.floor(maxHp(u) * 0.06 * (S.easy ? EASY.dmgTaken : 1));
       u.hp = Math.max(0, u.hp - Math.max(1, d));
       await flash(u, 'hit', 160);
       await msg(`${uname(u)}因為炎上受到 ${Math.max(1, d)} 點傷害。`, 360);
@@ -1130,13 +1216,21 @@ function toTitle() {
     cls: 'center title', build: () => [{ label: '開新串' }, { label: '回到串裡', disabled: !hasSave() }],
     onBack: () => {},
     onPick: i => {
-      if (i === 0) newGame();
+      if (i === 0) pushMenu({
+        title: '選擇難度', cls: 'center',
+        build: () => [
+          { label: '普通', desc: '原本的難度。怪物會追人，魔王不好打。' },
+          { label: '簡單', desc: '敵人比較弱、受到的傷害較少、經驗值與 K 幣 1.5 倍、「無視」一定成功、怪物比較少也不太追人。適合想專心看劇情的島民。之後也能在「設定」裡切換。' },
+        ],
+        onPick: j => newGame(j === 1),
+      });
       else { loadGame(); render(); toast('串浮上來了。從存檔繼續。'); }
     },
   });
 }
-function newGame() {
+function newGame(easy) {
   S = freshState();
+  S.easy = !!easy;
   built = null;
   const st = D.start;
   S.party = st.party.map(id => makeActor(id, D.actors[id].joinLevel));
@@ -1195,7 +1289,7 @@ function renderMap() {
     let t = '';
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) t += `<i class="tile" style="left:${x * T}px;top:${y * T}px;background-image:url(img/${D.tiles[m.rows[y][x]][0]}.png)"></i>`;
     layer.classList.add('noanim');
-    layer.innerHTML = `<div id="tiles" style="width:${W * T}px;height:${H * T}px">${t}</div><div id="ents"></div><img id="pl" class="sprite pl" alt="">`;
+    layer.innerHTML = `<div id="tiles" style="width:${W * T}px;height:${H * T}px">${t}</div><div id="ents"></div><div id="mons"></div><img id="pl" class="sprite pl" alt="">`;
     requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.remove('noanim')));
   }
   const cx = clamp(S.x - 7, 0, W - VW), cy = clamp(S.y - 5, 0, H - VH);
@@ -1206,12 +1300,28 @@ function renderMap() {
     const mark = e.mark && cond(e.mark) ? `<div class="mark" style="left:${e.x * T}px;top:${e.y * T - 32}px">！</div>` : '';
     return `<img class="sprite" src="img/${sp}.png" alt="" style="left:${e.x * T}px;top:${e.y * T}px">${mark}`;
   }).join('');
+  renderMons();
   const pl = el('pl');
   const src = `img/${heroSprite()}.png`;
   if (pl.getAttribute('src') !== src) pl.setAttribute('src', src);
   pl.classList.toggle('flip', S.dir === 'L');
   pl.style.left = S.x * T + 'px';
   pl.style.top = S.y * T + 'px';
+}
+// 怪物用固定的元素，移動時才有平滑的動畫
+function renderMons() {
+  const box = el('mons');
+  if (!box) return;
+  const have = new Map([...box.children].map(c => [c.dataset.id, c]));
+  for (const m of S.mons) {
+    let img = have.get(m.id);
+    if (!img) { img = document.createElement('img'); img.className = 'sprite mon'; img.alt = ''; img.dataset.id = m.id; img.src = `img/${m.sprite}.png`; box.appendChild(img); }
+    have.delete(m.id);
+    img.style.left = m.x * T + 'px';
+    img.style.top = m.y * T + 'px';
+    img.classList.toggle('chase', m.chasing);
+  }
+  for (const c of have.values()) c.remove();
 }
 function renderBattle() {
   const B = S.battle;
@@ -1302,7 +1412,7 @@ function renderOverlays() {
 function partySummary() {
   const t = S.playTime;
   return `<div class="psum">${S.party.map(a => `<div class="ps"><img src="img/${ad(a).sprite}.png" alt=""><div><b>${esc(ad(a).name)}</b> Lv ${a.level}<br>HP ${a.hp}/${maxHp(a)}　MP ${a.mp}/${maxMp(a)}</div></div>`).join('')}
-    <div class="ps-f"><span>${S.gold} K 幣</span><span>${Math.floor(t / 3600)}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}</span></div><div class="ps-g">${esc(S.goal || '')}</div></div>`;
+    <div class="ps-f"><span>${S.gold} K 幣${S.easy ? '<small class="easy">簡單</small>' : ''}</span><span>${Math.floor(t / 3600)}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}</span></div><div class="ps-g">${esc(S.goal || '')}</div></div>`;
 }
 
 /* ================================================================ 輸入 */
@@ -1422,6 +1532,7 @@ async function boot() {
     if (S.dialog || (S.waitOk)) press('ok', false);
   });
   setInterval(() => { if (S && (S.mode === 'map' || S.mode === 'battle') && !document.hidden) S.playTime++; }, 1000);
+  setInterval(monTick, 100);
   window.KDBG = {
     get S() { return S; }, get D() { return D; },
     warp: (m, x, y) => { S.menus.length = 0; S.dialog = null; teleport(m, x, y, 'D'); S.pendingAuto = false; built = null; render(); },
@@ -1434,6 +1545,7 @@ async function boot() {
     run: sc => runBusy(sc),
     speed: x => { SPEED = x; },
     god: on => { GOD = !!on; },
+    mons: on => { MONS_ON = !!on; if (!on) { S.mons = []; render(); } },
   };
 }
 

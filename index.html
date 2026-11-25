@@ -26,6 +26,10 @@ header p{margin:4px 0 0;color:#a89cc8;font-size:14px}
 .tile{position:absolute;width:48px;height:48px;background-size:48px 48px}
 .sprite{position:absolute;width:48px;height:48px;z-index:2;transition:left .14s linear,top .14s linear}
 .mark{position:absolute;width:30px;height:30px;margin-left:9px;text-align:center;z-index:4;pointer-events:none;background:#fff;color:#e0302a;border:3px solid #1a1420;border-radius:50% 50% 50% 8px;font-size:20px;font-weight:bold;line-height:24px;box-shadow:0 2px 4px #0008;animation:float 1s ease-in-out infinite}
+.sprite.mon{transition:left .3s linear,top .3s linear;animation:mbob 1.1s steps(2) infinite}
+.sprite.mon.chase{filter:drop-shadow(0 0 2px #ff3b3b) drop-shadow(0 0 3px #ff3b3b)}
+@keyframes mbob{50%{transform:translateY(-3px)}}
+.ps-f .easy{margin-left:8px;font-size:11px;padding:0 5px;border-radius:3px;background:#5fd35f;color:#111;vertical-align:1px}
 .sprite.pl{z-index:3}.flip{transform:scaleX(-1)}
 #alt{position:absolute;inset:0}
 #ov,#bn{position:absolute;inset:0;pointer-events:none}
@@ -246,7 +250,7 @@ body.fs .fsx{display:block;position:fixed;z-index:51;top:calc(10px + env(safe-ar
 </div>
 <button class="fsx" data-fs aria-label="離開全螢幕">✕ 離開全螢幕</button>
 <p class="help"><b>方向鍵／WASD</b> 移動、選擇　<b>Enter／空白鍵／Z</b> 調查、對話、確認　<b>Esc／X</b> 打開選單、取消　<b>F</b> 全螢幕<br>
-遇到岔路時看看告示牌，各地的討論板也常有島民留下的情報；魔王準備大招時記得「防禦」。打不贏就發動島民技能「無視」。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。</p>
+遇到岔路時看看告示牌，各地的討論板也常有島民留下的情報；魔王準備大招時記得「防禦」。野外的怪物看得到，碰到才會開戰，可以繞路躲開；靠太近牠會追過來。打不贏就發動島民技能「無視」，或在「設定」改成簡單模式。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。</p>
 <section class="about" id="about">
   <h2>關於這個網站</h2>
   <p>這是一個以 K 島（糟糕島）文化為題材的同人網頁遊戲，與 Komica 官方無關。所有像素圖都是用程式畫出來的原創素材。</p>
@@ -262,7 +266,7 @@ body.fs .fsx{display:block;position:fixed;z-index:51;top:calc(10px + env(safe-ar
     <li>也可以把這個網址貼到 VirusTotal 等網站安全檢查服務，用多家防毒引擎掃描。</li>
   </ul>
   <p>本站無毒，請安心回文。看完覺得不錯，推；沒什麼想說的，閱也可以。</p>
-  <p class="ver">版本 2026.11.25-8　回報問題時請附上這個版本號。</p>
+  <p class="ver">版本 2026.11.25-9　回報問題時請附上這個版本號。</p>
 </section>
 <script src="game.js"></script>
 </body>
