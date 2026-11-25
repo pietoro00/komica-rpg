@@ -218,7 +218,7 @@ async function exec(c) {
     }
     case 'karma':
       S.karma += c[1];
-      toast(c[1] > 0 ? '（島上某處，有人默默推了你一下。）' : '（島上某處，有人輕輕嘆了一口氣。）');
+      toast(c[1] > 0 ? '（島上某處，有人默默回了一句：推。）' : '（島上某處，有人只回了一個字：閱。）');
       break;
     case 'chapter': await showCard(c[1], c[2], c[3]); break;
     case 'board': await openBoard(c[1]); break;
@@ -238,13 +238,13 @@ async function exec(c) {
       const i = await choose([`休息（${price} K 幣）`, '不用了']);
       if (i === 0) {
         if (S.gold < price) await say('', 'K 幣不夠……');
-        else { S.gold -= price; fullHeal(); await say('', '好好休息了一晚。全隊的 HP 與 MP 都回復了！'); }
+        else { S.gold -= price; fullHeal(); await say('', '安心地潛水了一晚。全隊的 HP 與 MP 都回復了！'); }
       }
       break;
     }
     case 'shop': await openShop(c[1]); break;
     case 'warp': teleport(c[1], c[2], c[3], c[4]); break;
-    case 'save': await say('', saveGame() ? '冒險已記錄。' : '（這個瀏覽器無法存檔）'); break;
+    case 'save': await say('', saveGame() ? '冒險已記錄。這串不會沉了。' : '（這個瀏覽器無法存檔）'); break;
     case 'ending': await showEnding(c[1]); return STOP;
     case 'call': return run(D.calls[c[1]]);
   }
@@ -368,16 +368,16 @@ function openMainMenu() {
     cls: 'main', title: '選單',
     build: () => [
       { label: '道具' }, { label: '技能' }, { label: '裝備' }, { label: '狀態' },
-      { label: '聊天', right: skitsAvail().some(k => !skitSeen(k)) ? 'NEW' : '', disabled: !skitsAvail().length },
+      { label: '雜談', right: skitsAvail().some(k => !skitSeen(k)) ? 'NEW' : '', disabled: !skitsAvail().length },
       { label: '圖鑑' }, { label: '跳串', right: '傳送' }, { label: '任務' }, { label: '設定' }, { label: '存檔' }, { label: '關閉' },
     ],
     onPick: i => [menuItemsField, menuSkillsField, menuEquip, menuStatus, menuSkits, menuDex, menuTravel, menuQuests, menuSettings,
-      () => { toast(saveGame() ? '已存檔。' : '無法存檔'); }, popMenu][i](),
+      () => { toast(saveGame() ? '已存檔。這串不會沉了。' : '無法存檔'); }, popMenu][i](),
   });
 }
 function menuSkits() {
   pushMenu({
-    title: '隊伍聊天', cls: 'wide',
+    title: '隊伍雜談', cls: 'wide',
     build: () => skitsAvail().map(k => ({ label: k.title, right: skitSeen(k) ? '' : 'NEW', id: k.id })),
     onPick: (i, it) => {
       const k = D.skits.find(x => x.id === it.id);
@@ -663,7 +663,7 @@ async function battle(troopId, opts = {}) {
   S.banner = null;
   render();
   const names = [...new Set(ids.map(id => D.enemies[id].name))].join('、');
-  await msg(`${names}出現了！`, 650);
+  await msg(`${names}出現在串裡了！`, 650);
   B.intro = false;
   if (opts.partyBuff) { for (const a of aliveParty()) a.st[opts.partyBuff] = 99; await msg('全隊的攻擊力大幅提升了！'); }
   let result = null;
@@ -674,8 +674,8 @@ async function battle(troopId, opts = {}) {
     if (acts === 'flee') {
       const ps = aliveParty().reduce((s, a) => s + uStat(a, 'spd'), 0) / aliveParty().length;
       const es = aliveEnemies().reduce((s, e) => s + e.def.spd, 0) / aliveEnemies().length;
-      if (Math.random() < clamp(0.55 + (ps - es) * 0.02, 0.3, 0.9)) { await msg('成功逃跑了！'); result = 'flee'; break; }
-      await msg('逃跑失敗！');
+      if (Math.random() < clamp(0.55 + (ps - es) * 0.02, 0.3, 0.9)) { await msg('發動島民技能「無視」，成功離開了這串！'); result = 'flee'; break; }
+      await msg('無視失敗！被拉回串裡了！');
       acts = [];
     }
     const all = acts.map(a => ({ ...a, pri: a.type === 'combo' ? 2e4 : a.type === 'defend' ? 1e4 : uStat(a.u, 'spd') * (0.75 + Math.random() * 0.5) }));
@@ -712,7 +712,7 @@ async function victory() {
   const exp = B.enemies.reduce((s, e) => s + (e.def.exp || 0), 0);
   const gold = B.enemies.reduce((s, e) => s + (e.def.gold || 0), 0);
   for (const e of B.enemies) if (e.hp <= 0) dexEntry(e.id).killed++;
-  await msg('戰鬥勝利！', 500);
+  await msg('戰鬥勝利！大家辛苦乙！', 500);
   if (exp || gold) await msg(`獲得 ${exp} 經驗值、${gold} K 幣。`, 500);
   S.gold += gold;
   for (const a of aliveParty()) for (const l of gainExp(a, exp)) await msg(l, 650);
@@ -785,7 +785,7 @@ function commandFor(a, canBack) {
         { label: '道具', disabled: !battleItems().length, cmd: 'item' },
         { label: '防禦', cmd: 'defend' },
         { label: '自動', right: '全員攻擊', cmd: 'auto' },
-        { label: '逃跑', disabled: B.noFlee, cmd: 'flee' },
+        { label: '無視', disabled: B.noFlee, cmd: 'flee' },
       ],
       onBack: () => { if (canBack) done({ back: true }); },
       onPick: (i0, it0) => {
@@ -895,13 +895,13 @@ async function execAction(act) {
   else await msg(`${uname(u)}的攻擊！`, 300);
   await doSkill(u, sk, act.t);
 }
-function elemNote(t, elem) { const m = elemMult(t, elem); return m > 1 ? '效果拔群！' : m < 1 ? '效果不太好……' : ''; }
+function elemNote(t, elem) { const m = elemMult(t, elem); return m > 1 ? '效果拔群！' : m < 1 ? '被無視了，效果不太好……' : ''; }
 async function hitPhys(u, t, power, elem) {
   if (Math.random() < 0.04) { await msg('但是沒打中！'); return; }
   if (t.st.hidden && elem !== 'holy' && Math.random() < 0.75) { await msg('404 Not Found——攻擊撲空了！'); return; }
   let dmg = physDamage(u, t, power) * elemMult(t, elem);
   let note = elemNote(t, elem);
-  if (!isEnemy(u) && Math.random() < 0.06) { dmg *= 1.5; note = '會心一擊！' + note; }
+  if (!isEnemy(u) && Math.random() < 0.06) { dmg *= 1.5; note = '神回！' + note; }
   await applyDamage(u, t, Math.round(dmg), note, elem);
   if (alive(t) && alive(u) && t.st.counter && isEnemy(t) !== isEnemy(u)) {
     const c = Math.round(physDamage(t, u, 1.5));
@@ -939,7 +939,7 @@ async function applyDamage(u, t, dmg, note, elem) {
   if (GOD && !isEnemy(t)) dmg = 1;
   t.hp = Math.max(0, t.hp - dmg);
   if (isEnemy(t)) {
-    if (u && !isEnemy(u)) addGauge(D.gauge.hit + (note.includes('拔群') ? D.gauge.weak : 0) + (note.includes('會心') ? D.gauge.crit : 0));
+    if (u && !isEnemy(u)) addGauge(D.gauge.hit + (note.includes('拔群') ? D.gauge.weak : 0) + (note.includes('神回') ? D.gauge.crit : 0));
     const m = elemMult(t, elem), d = dexEntry(t.id);
     if (m > 1 && !d.weak.includes(elem)) { d.weak.push(elem); note += '（發現弱點：' + EN[elem] + '）'; }
     if (m < 1 && !d.resist.includes(elem)) d.resist.push(elem);
@@ -985,7 +985,7 @@ async function doSkill(u, sk, chosen) {
       if (aliveEnemies().length >= 3) { await msg('……但是沒有空間分裂了。'); return; }
       const e = newEnemy(sk.summon, ' ' + 'XYZ'[rnd(3)]);
       B.enemies.push(e);
-      await msg(`${e.name}出現了！`);
+      await msg(`${e.name}也跑來回文了！`);
       return;
     }
     if (sk.fx === 'healself') { const h = Math.floor(u.maxHp * sk.rate); u.hp = Math.min(u.maxHp, u.hp + h); await flash(u, 'heal'); await msg(`${uname(u)}回復了 ${h} HP！`); return; }
@@ -1102,7 +1102,7 @@ async function gameOver() {
   S.busy = true;
   render();
   await new Promise(() => pushMenu({
-    cls: 'center', build: () => [{ label: '從上次的存檔繼續', disabled: !hasSave() }, { label: '回到標題' }],
+    cls: 'center', build: () => [{ label: '從存檔把串推回來', disabled: !hasSave() }, { label: '回到標題' }],
     onBack: () => {},
     onPick: i => { if (i === 0) { loadGame(); render(); } else toTitle(); },
   }));
@@ -1111,11 +1111,11 @@ function toTitle() {
   S = freshState();
   built = null;
   pushMenu({
-    cls: 'center title', build: () => [{ label: '新的冒險' }, { label: '繼續冒險', disabled: !hasSave() }],
+    cls: 'center title', build: () => [{ label: '開新串' }, { label: '回到串裡', disabled: !hasSave() }],
     onBack: () => {},
     onPick: i => {
       if (i === 0) newGame();
-      else { loadGame(); render(); toast('從存檔繼續。'); }
+      else { loadGame(); render(); toast('串浮上來了。從存檔繼續。'); }
     },
   });
 }
@@ -1147,7 +1147,7 @@ function render() {
   if (S.mode === 'title') html = renderTitle();
   else if (S.mode === 'map') { renderMap(); }
   else if (S.mode === 'battle') html = renderBattle();
-  else if (S.mode === 'gameover') html = `<div class="full over"><h2>本串已沉。</h2><p>全隊倒下了……島，沉得更深了。</p></div>`;
+  else if (S.mode === 'gameover') html = `<div class="full over"><h2>本串已沉。</h2><p>全隊倒下了……沒有人回應，島沉得更深了。</p></div>`;
   else if (S.mode === 'ending') html = renderEnding();
   const mapLayer = el('maplayer');
   mapLayer.hidden = S.mode !== 'map';
@@ -1234,14 +1234,15 @@ function questPanel() {
   const qs = Object.entries(S.quests).map(([id, st]) => `<li class="${st}"><b>${st === 'done' ? '✔' : '・'} ${esc(D.quests[id].name)}</b><br><small>${esc(D.quests[id].desc)}</small></li>`).join('');
   return `<div class="quest"><div class="goal"><small>目前目標</small><br>${esc(S.goal || '—')}</div><ul class="ql">${qs || '<li><small>還沒有接到支線任務。</small></li>'}</ul></div>`;
 }
+function postNo(id, i) { return 100000 + hashId(id).charCodeAt(0) * 731 + i * 37; }
 function renderBoard() {
   const b = S.board, bd = D.boards[b.id], posts = boardPosts(b.id);
   const day = ['日', '一', '二', '三', '四', '五', '六'];
   const html = posts.slice(b.top).map((p, k) => {
-    const no = 100000 + hashId(b.id).charCodeAt(0) * 731 + p.i * 37;
+    const no = postNo(b.id, p.i);
     const d = new Date(2026, 10, 1 + (p.i % 24), (p.i * 7) % 24, (p.i * 13) % 60);
     const date = `${d.getFullYear() % 100}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}(${day[d.getDay()]})${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    const body = p.text.split('\n').map(l => l.startsWith('>') ? `<span class="q">${esc(l)}</span>` : esc(l)).join('<br>');
+    const body = p.text.replace(/\{no:(\d+)\}/g, (_, n) => postNo(b.id, +n)).split('\n').map(l => l.startsWith('>') ? `<span class="q">${esc(l)}</span>` : esc(l)).join('<br>');
     const head = p.owner
       ? `<b class="ttl">無標題</b> 名稱: <b class="own">島主？</b> ${date} ID:${'?'.repeat(8)} No.${no}`
       : `<b class="ttl">無標題</b> 名稱: <b class="nm">無名氏</b> ${date} ID:${hashId(b.id + p.i)} No.${no}`;
