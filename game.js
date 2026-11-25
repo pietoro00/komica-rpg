@@ -159,7 +159,12 @@ function toast(text) {
 }
 function pushMenu(m) { m.cursor = m.cursor || 0; S.menus.push(m); render(); }
 function popMenu() { S.menus.pop(); render(); }
-function menuItems(m) { return m.build(); }
+function menuItems(m) {
+  const items = m.build();
+  // 清單變短（例如賣掉或用掉最後一個道具）時，把游標拉回最後一項
+  if (m.cursor >= items.length) m.cursor = Math.max(0, items.length - 1);
+  return items;
+}
 function menuKey(btn) {
   const m = S.menus[S.menus.length - 1];
   const items = menuItems(m);
@@ -1112,7 +1117,8 @@ async function gameOver() {
   S.busy = true;
   render();
   await new Promise(() => pushMenu({
-    cls: 'center', build: () => [{ label: '從存檔把串推回來', disabled: !hasSave() }, { label: '回到標題' }],
+    cls: 'center', cursor: hasSave() ? 0 : 1,  // 沒有存檔時，游標直接停在「回到標題」
+    build: () => [{ label: '從存檔把串推回來', disabled: !hasSave() }, { label: '回到標題' }],
     onBack: () => {},
     onPick: i => { if (i === 0) { loadGame(); render(); } else toTitle(); },
   }));

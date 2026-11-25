@@ -111,14 +111,15 @@ header p{margin:4px 0 0;color:#a89cc8;font-size:14px}
 .badges{min-height:18px;display:flex;gap:3px}
 .badge{font-size:11px;padding:0 4px;border-radius:3px;background:var(--c);color:#111;font-weight:bold;line-height:16px}
 .bpanel{position:absolute;left:0;right:0;bottom:0;height:222px;background:#0c0a1cf0;border-top:3px solid var(--ink);display:flex}
-.party{width:440px;padding:6px 8px;display:flex;flex-direction:column;gap:3px}
+.party{width:440px;padding:6px 8px;display:flex;flex-direction:column;gap:3px;overflow:hidden}
 .pc{display:flex;gap:8px;align-items:center;padding:2px 6px;border-radius:6px;border:2px solid transparent}
-.pc img{width:44px;height:44px}
+.pc img{width:40px;height:40px}
 .pc.act{border-color:var(--gold);background:#ffffff10}
 .pc.ko{opacity:.45}.pc.ko img{transform:rotate(90deg)}
 .pc.hit{animation:shake .26s}.pc.heal img,.foe.heal img{animation:glow .3s}
-.pc-b{flex:1}
-.pc-n{font-size:14px;display:flex;gap:6px;align-items:center}
+.pc-b{flex:1;display:grid;grid-template-columns:auto auto;justify-content:start;column-gap:14px;row-gap:2px}
+.pc-b .bar{width:96px}
+.pc-n{grid-column:1/-1;font-size:14px;display:flex;gap:6px;align-items:center}
 .pc-r{display:flex;align-items:center;gap:6px;font-size:12px;color:#a89cc8}
 .pc-r span{width:40px;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
 .bar{display:inline-block;height:8px;background:#2a2238;border:1px solid #ffffff55;border-radius:3px;overflow:hidden;width:150px}
