@@ -1355,5 +1355,20 @@ async function boot() {
   };
 }
 
-if (typeof window !== 'undefined') window.addEventListener('DOMContentLoaded', boot);
+/* 依視窗寬度縮放遊戲畫面 */
+function fitStage() {
+  const stage = document.getElementById('stage'), frame = document.getElementById('frame');
+  if (!stage || !frame) return;
+  const k = Math.min(1, (document.documentElement.clientWidth - 16) / 774);
+  frame.style.transform = `scale(${k})`;
+  stage.style.width = 774 * k + 'px';
+  stage.style.height = 582 * k + 'px';
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', () => {
+    fitStage();
+    new ResizeObserver(fitStage).observe(document.documentElement);
+    boot();
+  });
+}
 if (typeof module !== 'undefined') module.exports = { expFor, setData: d => { D = d; } };

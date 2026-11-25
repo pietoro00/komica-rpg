@@ -183,6 +183,10 @@ button:focus-visible{outline:3px solid var(--gold)}
 .ct{font-size:52px;letter-spacing:10px;color:#ffe9a8;text-shadow:0 0 18px #ffb84a;margin:6px 0}
 .cs{font-size:18px;color:#d8d0ff;letter-spacing:3px}
 @keyframes cardin{0%{opacity:0}100%{opacity:1}}
+.about{max-width:680px;margin:0 auto 40px;padding:16px 20px;background:#18122eb3;border:1px solid #5a4a8a;border-radius:10px;font-size:14px;color:#c8c0e8}
+.about h2{margin:0 0 8px;font-size:17px;color:var(--ink)}
+.about ul{margin:6px 0 10px;padding-left:20px}.about li{margin:4px 0}
+.about b{color:var(--ink);font-weight:bold}.about a{color:var(--gold)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -217,20 +221,21 @@ button:focus-visible{outline:3px solid var(--gold)}
 </div>
 <p class="help"><b>方向鍵／WASD</b> 移動、選擇　<b>Enter／空白鍵／Z</b> 調查、對話、確認　<b>Esc／X</b> 打開選單、取消<br>
 遇到岔路時看看告示牌；魔王準備大招時記得「防禦」。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。</p>
+<section class="about" id="about">
+  <h2>關於這個網站</h2>
+  <p>這是一個以 K 島（糟糕島）文化為題材的同人網頁遊戲，與 Komica 官方無關。所有像素圖都是用程式畫出來的原創素材。</p>
+  <ul>
+    <li><b>沒有廣告、沒有追蹤器、沒有第三方程式。</b>網頁只會讀取這個網站自己的檔案（遊戲程式、劇情資料、圖片），不連任何外部網址。</li>
+    <li><b>不需要登入、不會下載任何檔案、不會要求相機、位置、通知等權限。</b></li>
+    <li><b>存檔只存在你自己的瀏覽器裡</b>（localStorage），不會上傳到任何地方。清除瀏覽器資料就會刪除存檔。</li>
+    <li><b>網站設定了安全性標頭</b>：瀏覽器只會執行本站的程式，其他來源的程式一律會被擋下。</li>
+  </ul>
+  <p>想自己確認？</p>
+  <ul>
+    <li>原始碼：<a href="https://github.com/pietoro00/komica-rpg">github.com/pietoro00/komica-rpg</a>，網站上跑的每一行程式都在這裡。</li>
+    <li>也可以把這個網址貼到 VirusTotal 等網站安全檢查服務，用多家防毒引擎掃描。</li>
+  </ul>
+</section>
 <script src="game.js"></script>
-<script>
-{
-  const stage = document.getElementById('stage'), frame = document.getElementById('frame');
-  const fit = () => {
-    const k = Math.min(1, (document.documentElement.clientWidth - 16) / 774);
-    frame.style.transform = `scale(${k})`;
-    stage.style.width = 774 * k + 'px';
-    stage.style.height = 582 * k + 'px';
-  };
-  const ro = new ResizeObserver(fit);
-  ro.observe(document.documentElement);
-  fit();
-}
-</script>
 </body>
 </html>
