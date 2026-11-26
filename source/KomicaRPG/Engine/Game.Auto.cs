@@ -21,7 +21,7 @@ public class SimState
 /// <summary>預演的結果：這段腳本會做什麼。</summary>
 class SimAcc
 {
-    public int Prod, Karma;
+    public int Prod, Side, Karma;   // Side：會接、推進或交付支線
     public readonly StringBuilder Sig = new();
     public string Who = "";
     public readonly List<string> Shops = new();
@@ -43,6 +43,9 @@ class AutoPlanState
     public List<AutoLeg> Legs = new();
     public string Label = "", Key = "", TKey = "";
 }
+
+/// <summary>找目標的方式。Main：只跑主線。Arrow：給目標箭頭用。NoTravel：不用跳串。</summary>
+record AutoOpt(bool Main = false, bool Arrow = false, bool NoTravel = false);
 
 class AutoTarget
 {
@@ -89,8 +92,8 @@ class Bfs
 /// </summary>
 public partial class Game
 {
-    static readonly double[] AutoSpeeds = { 1, 0.55, 0.3 };
-    static readonly string[] AutoSpeedNames = { "普通", "快", "超快" };
+    /// <summary>全自動的速度倍率（→ 加速、← 減速）。</summary>
+    static readonly int[] AutoMuls = { 1, 2, 3, 4 };
     static readonly string[] Dirs = { "U", "D", "L", "R" };
     int autoSpeed;
     long autoNext;
@@ -109,12 +112,31 @@ public partial class Game
     public bool Auto { get; private set; }
     public Dictionary<string, string> AutoSeen { get; private set; } = new();
     public string AutoNote { get; private set; } = "";
+    /// <summary>全自動只跑主線（支線留給玩家）。</summary>
+    public bool AutoMain { get; set; }
+    public int AutoMul => AutoMuls[autoSpeed];
+    /// <summary>自己玩時顯示目標箭頭。</summary>
+    public bool ShowArrow { get; private set; } = true;
+    /// <summary>所有對話都用手寫字。</summary>
+    public bool HandAll { get; private set; }
+    public AdvStats Stats { get; private set; } = new();
+    BoardState? autoBoard;
 
-    double AutoDelay(double ms) => ms * AutoSpeeds[autoSpeed];
+    double AutoDelay(double ms) => ms / AutoMuls[autoSpeed];
+
+    void AutoSpeedStep(int d)
+    {
+        var n = Math.Clamp(autoSpeed + d, 0, AutoMuls.Length - 1);
+        if (n == autoSpeed) { ShowToast(d > 0 ? "已經是最快了（×4）" : "已經是正常速度了（×1）"); return; }
+        autoSpeed = n;
+        _ = SaveSpeed();
+        ShowToast(n > 0 ? $"全自動：加速 ×{AutoMuls[n]}" : "全自動：正常速度");
+        Render();
+    }
 
     void ResetAuto()
     {
-        Auto = false; AutoSeen = new(); AutoNote = ""; goalMap = null; shopId = null; autoChoice = null;
+        Auto = false; AutoMain = false; AutoSeen = new(); AutoNote = ""; autoBoard = null; arrowKey = ""; arrowPt = null; goalMap = null; shopId = null; autoChoice = null;
         autoPlan = null; autoTalk = null; autoIntent = null; autoSkip.Clear(); autoFails = 0; autoDone = false; autoDlg = null;
     }
 
@@ -125,6 +147,7 @@ public partial class Game
         if (on)
         {
             Easy = true;   // 全自動一律用簡單難度
+            Stats.AutoUsed = true;
             ShowToast("全自動模式開啟（難度：簡單）");
         }
         else
@@ -191,6 +214,7 @@ public partial class Game
         switch (c[0].GetString())
         {
             case "say":
+            case "hand":
             {
                 var sp = Str(c, 1);
                 acc.Sig.Append(sp).Append('|');
@@ -229,7 +253,7 @@ public partial class Game
                 var id = Str(c, 1);
                 var s = Str(c, 2);
                 var cur = st.Quests.GetValueOrDefault(id);
-                if (cur != "done" && cur != s) { st.Quests[id] = s; acc.Prod++; }
+                if (cur != "done" && cur != s) { st.Quests[id] = s; acc.Prod++; acc.Side++; }
                 break;
             }
             case "karma": { var n = Int(c, 1, 0); st.Karma += n; acc.Karma += n; break; }
@@ -430,9 +454,10 @@ public partial class Game
         if (goalMap != null) set.Add(goalMap);
         foreach (var (mid, m) in D.Maps)
         {
+            // 地圖名稱裡任何連續三個字出現在目標裡就算：「掛圖美術館 2F」也接受「美術館」，「實名要塞外圍」也接受「實名要塞」
             var baseName = m.Name.Split(' ')[0];
-            if (baseName.EndsWith("外圍") || baseName.EndsWith("內部")) baseName = baseName[..^2];
-            if (Goal.Contains(m.Name) || Goal.Contains(baseName)) set.Add(mid);
+            for (var i = 0; i + 3 <= baseName.Length; i++)
+                if (Goal.Contains(baseName.Substring(i, 3))) { set.Add(mid); break; }
         }
         return set;
     }
@@ -443,11 +468,13 @@ public partial class Game
     /// <summary>
     /// 目標的優先順序（數字小的先做）：0 這張地圖上的事　1 主線（目前目標提到的地圖、頭上有「！」的人）
     /// 2 其他地圖的支線與寶箱　3 不在目前目標裡的魔王戰（免得跳過劇情先打掉）　4 結局
+    /// opt.Main：只跑主線（不在目前目標裡的事、支線、閒聊都不做，裝備照買）。opt.Arrow：給目標箭頭用（只找主線，不聊天、不買東西）
     /// </summary>
-    List<AutoTarget> AutoTargets()
+    List<AutoTarget> AutoTargets(AutoOpt opt)
     {
         var outp = new List<AutoTarget>();
         var gm = GoalMaps();
+        var main0 = opt.Main || opt.Arrow;
         var sk = AutoStateKey();
         foreach (var (mid, m) in D.Maps)
         {
@@ -460,8 +487,21 @@ public partial class Game
                 var here = mid == MapId;
                 var main = gm.Contains(mid) || (e.Mark != null && Cond(e.Mark));
                 var boss = a.Battle != null && D.Troops[a.Battle].Any(id => D.Enemies[id].Boss);
+                var marked = e.Mark != null && Cond(e.Mark);
                 if (a.Prod > 0)
-                    outp.Add(new AutoTarget { Map = mid, Ent = e, Key = key, Label = a.Who, Prio = a.Ending != null ? 4 : boss && !main ? 3 : here ? 0 : main ? 1 : 2 });
+                {
+                    if (main0 && !main && a.Ending == null) continue;
+                    if (opt.Main && a.Side > 0 && a.Ending == null) continue;   // 只跑主線：會接、推進或交付支線的人都略過
+                    var prio = opt.Arrow ? (a.Ending != null ? 4 : marked ? 0 : e.Chest != null ? 2 : 1)
+                        : a.Ending != null ? 4 : boss && !main ? 3 : here ? 0 : main ? 1 : 2;
+                    outp.Add(new AutoTarget { Map = mid, Ent = e, Key = key, Label = a.Who, Prio = prio });
+                }
+                else if (opt.Arrow) continue;
+                else if (opt.Main)
+                {
+                    if (here && a.Shops.Any(s => ShopBuys(s).Count > 0))
+                        outp.Add(new AutoTarget { Map = mid, Ent = e, Key = key, Label = a.Who + "（買裝備）", Prio = 0 });
+                }
                 else if (here && a.Sig.Length > 0 && AutoSeen.GetValueOrDefault(key) != a.Sig.ToString())
                     outp.Add(new AutoTarget { Map = mid, Ent = e, Key = key, Label = a.Who, Prio = 0 });
                 else if (here && a.Shops.Any(s => ShopBuys(s).Count > 0))
@@ -473,7 +513,7 @@ public partial class Game
                 if (!Cond(au.Cond)) continue;
                 var a = new SimAcc();
                 SimRun(au.Script, Snapshot(), a);
-                if (a.Prod > 0) { outp.Add(new AutoTarget { Map = mid, Key = mid + ":auto", Label = m.Name, Prio = gm.Contains(mid) ? 1 : 2 }); break; }
+                if (a.Prod > 0 && (!main0 || gm.Contains(mid))) { outp.Add(new AutoTarget { Map = mid, Key = mid + ":auto", Label = m.Name, Prio = gm.Contains(mid) ? 1 : 2 }); break; }
             }
         }
         return outp;
@@ -481,9 +521,10 @@ public partial class Game
 
     static List<AutoLeg> Append(List<AutoLeg> legs, AutoLeg leg) => legs.Concat(new[] { leg }).ToList();
 
-    AutoPlanState? AutoComputePlan()
+    AutoPlanState? AutoComputePlan(AutoOpt? opt = null)
     {
-        var targets = AutoTargets();
+        opt ??= new AutoOpt();
+        var targets = AutoTargets(opt);
         if (targets.Count == 0) return null;
         var seen = new HashSet<string>();
         var pq = new List<AutoNode> { new() { Map = MapId, X = X, Y = Y } };
@@ -529,7 +570,7 @@ public partial class Game
                     Legs = Append(node.Legs, new AutoLeg { Map = node.Map, Path = st.Path, Act = "ferry", Dir = st.Dir, Ent = e.Id, To = f.Map }),
                 });
             }
-            if (node.Legs.Count == 0 && !D.NoTravel.Contains(node.Map))
+            if (!opt.NoTravel && node.Legs.Count == 0 && !D.NoTravel.Contains(node.Map))
                 foreach (var tp in D.Travel)
                     if (tp.Map != node.Map && Visited.GetValueOrDefault(tp.Map) && Cond(tp.Cond))
                         pq.Add(new AutoNode { Map = tp.Map, X = tp.X, Y = tp.Y, Cost = 40, Legs = new List<AutoLeg> { new() { Map = node.Map, Act = "travel", Tp = tp } } });
@@ -624,6 +665,7 @@ public partial class Game
             a.Hp = MaxHp(a);
             a.Mp = MaxMp(a);
             a.St = new();
+            Stats.Revives++;
             ShowPopup(a, "AUTO", "heal");
             await Msg($"（全自動）{Ad(a).Name}被推回來了！HP 與 MP 全滿！", 500);
         }
@@ -657,7 +699,15 @@ public partial class Game
         if (Mode == "gameover") { if (top != null) { top.OnPick(SaveExists ? 0 : 1, new MenuItem()); Later(800); } return; }
         if (Mode == "title") return;
         if (Card != null) { CloseCard(Card); Later(300); return; }
-        if (Board != null) { CloseBoard(); Later(300); return; }
+        if (Board is { } bd)
+        {
+            // 看板一則一則往下捲，每則依字數停留
+            var posts = BoardPosts(bd.Id);
+            int Len(int ix) => ix >= 0 && ix < posts.Count ? posts[ix].Post.Text.Length : 0;
+            if (autoBoard != bd) { autoBoard = bd; Later(900 + Len(bd.Top) * 70); return; }
+            if (bd.Top < posts.Count - 1) { bd.Top++; Render(); Later(600 + Len(bd.Top) * 70); return; }
+            autoBoard = null; CloseBoard(); Later(300); return;
+        }
         if (waitOk != null) { var w = waitOk; waitOk = null; w.TrySetResult(); Later(250); return; }
         if (top != null && top.Cls.Contains("battle"))
         {
@@ -727,7 +777,7 @@ public partial class Game
         if (ik != autoInvKey) { autoInvKey = ik; AutoEquipAll(); }
         if (autoPlan == null || autoPlan.Key != AutoStateKey() || autoPlan.Legs.Count == 0 || autoPlan.Legs[0].Map != MapId)
         {
-            autoPlan = AutoComputePlan();
+            autoPlan = (AutoMain ? AutoComputePlan(new AutoOpt(Main: true)) : null) ?? AutoComputePlan();   // 只跑主線時找不到路，就退回全部
             if (autoPlan == null)
             {
                 AutoNote = "（四處看看……）";
@@ -783,6 +833,65 @@ public partial class Game
         }
         autoPlan.Legs.RemoveAt(0);
         Later(100);
+    }
+
+    // ---------------------------------------------------------------- 目標箭頭（自己玩的時候）
+    // 用全自動的路線計算，只找主線（目前目標提到的地圖、頭上有「！」的人），不用跳串。
+    // 目標在這張地圖：指向那個人；在別的地圖：指向該走的出口（或船夫）。狀態沒變就不重算。
+    string arrowKey = "";
+    (int X, int Y, string Label)? arrowPt;
+
+    public (int X, int Y, string Label)? GoalArrow()
+    {
+        if (!ShowArrow || Auto || Mode != "map" || Busy || string.IsNullOrEmpty(Goal)) return null;
+        var key = AutoStateKey();
+        if (key != arrowKey)
+        {
+            arrowKey = key;
+            arrowPt = null;
+            var plan = AutoComputePlan(new AutoOpt(Arrow: true, NoTravel: true));
+            var leg = plan?.Legs.FirstOrDefault();
+            if (plan != null && leg != null && leg.Map == MapId)
+            {
+                if (leg.Act is "talk" or "ferry")
+                {
+                    var e = CurMap.Ents.FirstOrDefault(x => x.Id == leg.Ent);
+                    if (e != null) arrowPt = (e.X, e.Y, plan.Label);
+                }
+                else if (leg.Act == "walk")
+                {
+                    int x = X, y = Y;
+                    foreach (var d in leg.Path) { var (dx, dy) = Step(d); x += dx; y += dy; }
+                    arrowPt = (x, y, plan.Label);
+                }
+            }
+        }
+        return arrowPt;
+    }
+
+    public void ToggleArrow() { ShowArrow = !ShowArrow; arrowKey = ""; _ = SaveSpeed(); Render(); }
+    public void ToggleHand() { HandAll = !HandAll; _ = SaveSpeed(); Render(); }
+
+    // ---------------------------------------------------------------- 本次冒險紀錄（全破時顯示在結局卡）
+    public (List<(string Label, string Value)> Rows, List<string> Done) AdventureRecord()
+    {
+        var st = Stats;
+        var done = D.Quests.Keys.Where(id => Quests.GetValueOrDefault(id) == "done").ToList();
+        var chestTotal = D.Maps.Values.Sum(m => m.Ents.Count(e => e.Chest != null));
+        var chests = Flags.Keys.Count(f => f.StartsWith("chest:"));
+        var kills = Dex.Values.Sum(d => d.Killed);
+        var seen = Dex.Values.Count(d => d.Seen);
+        var rows = new List<(string, string)>
+        {
+            ("戰鬥", $"{st.Battles} 場（勝 {st.Wins}、無視 {st.Flees}）"),
+            ("打倒的怪物", $"{kills} 隻（圖鑑 {seen} / {D.Enemies.Count}）"),
+            ("打開的寶箱", $"{chests} / {chestTotal}"),
+            ("完成的支線", $"{done.Count} / {D.Quests.Count}"),
+            ("善行", $"{Karma}"),
+            ("走過的路", $"{st.Steps} 步"),
+        };
+        if (st.AutoUsed) rows.Add(("全自動", $"有用（倒下後被推回來 {st.Revives} 次）"));
+        return (rows, done.Select(id => D.Quests[id].Name).ToList());
     }
 
     /// <summary>手寫字：每個字隨機歪一點、大小不一（同一句話每次都歪得一樣）。回傳 (字, style)。</summary>

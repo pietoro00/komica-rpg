@@ -84,6 +84,7 @@ public partial class Game
             seen[id] = seen.GetValueOrDefault(id) + 1;
             enemies.Add(NewEnemy(id, counts[id] > 1 ? " " + "ABCD"[seen[id] - 1] : ""));
         }
+        Stats.Battles++;
         var b = Battle = new BattleState
         {
             Enemies = enemies,
@@ -159,7 +160,8 @@ public partial class Game
             foreach (var a in Party)
                 if (a.Hp <= 0) { a.Hp = MaxHp(a); a.Mp = MaxMp(a); }
 
-        if (result == "win") await Victory();
+        if (result == "win") { Stats.Wins++; await Victory(); }
+        else if (result == "flee") Stats.Flees++;
         else if (result == "lose") await Msg("全隊倒下了……", 1100);
         foreach (var a in Party) { a.St = new(); a.Guard = false; }
         Battle = null;

@@ -3,7 +3,7 @@ D=json.load(open(__import__('os').path.join(__import__('os').path.dirname(__file
 issues=[]
 set_flags=collections.defaultdict(list); used_flags=collections.defaultdict(list)
 items=D['items']; skills=D['skills']; enemies=D['enemies']; troops=D['troops']; shops=D['shops']; quests=D['quests']; calls=D['calls']; maps=D['maps']
-KNOWN={'say','if','choice','flag','unflag','give','take','gold','goal','quest','karma','chapter','board','battle','join','heal','inn','shop','warp','save','ending','call'}
+KNOWN={'say','hand','if','choice','flag','unflag','give','take','gold','goal','quest','karma','chapter','board','battle','join','heal','inn','shop','warp','save','ending','call'}
 def cond_terms(c, where):
     if not c: return
     for alt in c.split('|'):
@@ -28,7 +28,7 @@ def scan(sc, where):
         if not isinstance(c,list) or not c: issues.append(('bad cmd',where,c)); continue
         op=c[0]
         if op not in KNOWN: issues.append(('unknown op',where,op)); continue
-        if op=='say':
+        if op in ('say','hand'):
             for t in c[2:]:
                 for m in re.findall(r'\{(\w+):(\w+)\}', t):
                     if not (m[0]=='item' and m[1] in items): issues.append(('bad placeholder',where,m))

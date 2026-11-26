@@ -198,14 +198,20 @@ public partial class Game
                 new() { Label = "戰鬥速度", Right = BSpeedNames[bspeed], Desc = "按 Enter 切換。設定會記在這台裝置上。" },
                 new() { Label = "難度", Right = Easy ? "簡單" : "普通", Desc = "按 Enter 切換，會跟著存檔記錄。簡單：敵人比較弱、受到的傷害較少、經驗值與 K 幣 1.5 倍、「無視」一定成功、怪物比較少也不太追人。" },
                 new() { Label = "全自動模式", Right = Auto ? "開" : "關", Desc = "開啟後由電腦幫你玩：自動走路、找人說話、做主線和支線、戰鬥、買裝備換裝備，一路玩到結局。難度會自動改成「簡單」，戰鬥中倒下會自動復活並補滿 HP／MP。按「選單」可以暫停，點畫面左上角的 AUTO 可以關掉。" },
-                new() { Label = "自動速度", Right = AutoSpeedNames[autoSpeed], Desc = "全自動模式的走路與對話速度。按 Enter 切換。" },
+                new() { Label = "自動速度", Right = "×" + AutoMuls[autoSpeed], Desc = "全自動模式的走路、對話、戰鬥速度。按 Enter 切換。全自動進行中也可以直接按 →（加速 ×2、×3、×4）或 ←（減速）。" },
+                new() { Label = "全自動範圍", Right = AutoMain ? "只跑主線" : "全部", Desc = "全部：主線、支線、寶箱都會做。只跑主線：只往目前目標走，支線留給你自己玩（找不到路時才會順便做支線）。" },
+                new() { Label = "目標箭頭", Right = ShowArrow ? "開" : "關", Desc = "自己玩的時候，在畫面上指出目前目標的方向：目標在畫面裡會在頭上顯示 ▼，在畫面外會在邊緣顯示箭頭。" },
+                new() { Label = "對話字體", Right = HandAll ? "手寫" : "一般", Desc = "手寫：所有對話都用黃毛那種歪歪扭扭的手寫字顯示。設定會記在這台裝置上。" },
                 new() { Label = "返回" },
             },
             OnPick = (i, mi0) =>
             {
-                if (i == 4) { PopMenu(); return; }
+                if (i == 7) { PopMenu(); return; }
+                if (i == 4) { AutoMain = !AutoMain; autoPlan = null; ShowToast(AutoMain ? "全自動：只跑主線" : "全自動：主線、支線全部都做"); Render(); return; }
+                if (i == 5) { ToggleArrow(); return; }
+                if (i == 6) { ToggleHand(); return; }
                 if (i == 2) { SetAuto(!Auto); if (Auto) Menus.Clear(); Render(); return; }
-                if (i == 3) { autoSpeed = (autoSpeed + 1) % AutoSpeeds.Length; _ = SaveSpeed(); Render(); return; }
+                if (i == 3) { autoSpeed = (autoSpeed + 1) % AutoMuls.Length; _ = SaveSpeed(); Render(); return; }
                 if (i == 1)
                 {
                     Easy = !Easy;
@@ -225,6 +231,8 @@ public partial class Game
         var meta = await LoadMeta();
         meta.Speed = bspeed;
         meta.AutoSpeed = autoSpeed;
+        meta.Arrow = ShowArrow;
+        meta.Hand = HandAll;
         try { await storageSet(MetaKey, System.Text.Json.JsonSerializer.Serialize(meta, SaveJson)); } catch { /* 無法存也沒關係 */ }
     }
 

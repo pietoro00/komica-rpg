@@ -44,6 +44,23 @@ header p{margin:4px 0 0;color:#a89cc8;font-size:14px}
 .autob b{background:#5fd35f;color:#102010;border-radius:3px;padding:0 6px;letter-spacing:1px;animation:autob 1.2s infinite}
 .autob span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @keyframes autob{50%{opacity:.55}}
+/* 目標箭頭 */
+.garrow{position:absolute;z-index:12;pointer-events:none;color:#ffd54a;text-shadow:0 0 3px #000,0 0 6px #000;font-size:26px;line-height:1;transform:translate(-50%,-50%)}
+.garrow.on{animation:garrow .9s infinite}
+.garrow.edge span{display:inline-block;font-size:30px}
+@keyframes garrow{50%{margin-top:-6px}}
+.autob i{font-style:normal;font-size:11px;background:#ffd54a;color:#201a00;border-radius:3px;padding:0 4px}
+.dialog.hand.nar .dt,.dialog.hand .dt{color:#23306a}
+/* 本次冒險紀錄 */
+.full.ending:not(.dim){padding-top:16px}
+.ending .post{margin-top:0;max-height:440px;overflow:auto}
+.ending .post p{margin:6px 0}
+.ending .rec{margin-top:8px;padding-top:6px;border-top:1px dashed #80000055;font-size:14px}
+.ending .rec b{color:#cc1105}
+.ending .rec table{border-collapse:collapse;margin:3px 0}
+.ending .rec th{font-weight:normal;color:#117743;padding:0 14px 0 0;white-space:nowrap;text-align:left}
+.ending .rec td{padding:0}
+.ending .rec .small{font-size:12px;color:#7a4a3a;line-height:1.5}
 /* 選單 */
 .mwrap{position:absolute;inset:0;display:flex;gap:10px;padding:14px;align-items:flex-start;z-index:15}
 .mwrap.cascade{display:block}.casc{position:absolute}.cascade .psum{position:absolute;right:14px;top:14px}

@@ -60,15 +60,18 @@ public class Menu
 
 public class DialogState
 {
-    public DialogState(string speaker, string text, TaskCompletionSource? tcs)
+    public DialogState(string speaker, string text, TaskCompletionSource? tcs, bool hand = false)
     {
         Speaker = speaker;
         Text = text;
         Tcs = tcs;
+        Hand = hand;
     }
 
     public string Speaker { get; }
     public string Text { get; }
+    /// <summary>用手寫字顯示（腳本的 hand 指令）。</summary>
+    public bool Hand { get; }
     public TaskCompletionSource? Tcs { get; }
 }
 
@@ -141,6 +144,19 @@ public class SaveData
     public bool Auto { get; set; }
     public Dictionary<string, string> AutoSeen { get; set; } = new();
     public string? GoalMap { get; set; }
+    public bool AutoMain { get; set; }
+    public AdvStats Stats { get; set; } = new();
+}
+
+/// <summary>本次冒險紀錄（全破時顯示在結局卡）。</summary>
+public class AdvStats
+{
+    public int Battles { get; set; }
+    public int Wins { get; set; }
+    public int Flees { get; set; }
+    public int Steps { get; set; }
+    public int Revives { get; set; }
+    public bool AutoUsed { get; set; }
 }
 
 /// <summary>地圖上看得到的怪物（明雷）。</summary>
@@ -173,6 +189,10 @@ public class MetaData
     public List<string> Endings { get; set; } = new();
     public int Speed { get; set; }
     public int AutoSpeed { get; set; }
+    /// <summary>目標箭頭（沒設定過＝開）。</summary>
+    public bool? Arrow { get; set; }
+    /// <summary>所有對話都用手寫字。</summary>
+    public bool Hand { get; set; }
 }
 
 /// <summary>怪物圖鑑的一筆紀錄。</summary>

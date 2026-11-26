@@ -86,6 +86,7 @@ class Canvas:
 # ---------------------------------------------------------------- 腳本工具
 def say(sp, *t): return ["say", sp] + list(t)
 def nar(*t): return ["say", ""] + list(t)
+def hand(sp, *t): return ["hand", sp] + list(t)   # 用手寫字顯示（回憶、手寫的卡片）
 def IF(c, a, b=None): return ["if", c, a] + ([b] if b is not None else [])
 def F(f): return ["flag", f]
 def give(i, n=1): return ["give", i, n]
@@ -360,7 +361,7 @@ yijing_script = [IF("flag:yjDone", [
 HM = "黃毛"
 bless_dd = IF("flag:q_bday & !flag:bdayDone & !flag:bless_dd", [
     say(HM, "生日哥的卡片？", "塗鴉角落的大家一起畫。我來寫字。"),
-    nar("卡片上歪歪扭扭地寫著：「生日快樂」。", "旁邊畫滿了塗鴉角落每個人的小頭像。"),
+    nar("卡片上歪歪扭扭地寫著——"), hand("", "生日快樂。", "（旁邊畫滿了塗鴉角落每個人的小頭像）"),
     give("card"), F("bless_dd"),
 ])
 huangmao_script = [IF("flag:hmDone", [
@@ -1370,9 +1371,9 @@ abyss_ents = [
     chest("c3", 2, 17, "ar5"),
     chest("c4", 21, 17, "hv4"),
     chest("c5", 11, 12, "frag"),
-    ent("memory1", "sign", 3, 10, [nar("一則很久以前的回應：", "「沒關係，島爆了，我們再蓋一次就好。」")]),
-    ent("memory2", "sign", 20, 10, [nar("一則很久以前的回應：", "「謝謝你昨天回我。我本來以為，不會有人看到。」")]),
-    ent("memory3", "sign", 10, 7, [nar("一則很久以前的回應：", "「有人在嗎？」", "底下有一萬則回應，全部寫著：「有。」")]),
+    ent("memory1", "sign", 3, 10, [nar("一則很久以前的回應："), hand("", "沒關係，島爆了，我們再蓋一次就好。")]),
+    ent("memory2", "sign", 20, 10, [nar("一則很久以前的回應："), hand("", "謝謝你昨天回我。", "我本來以為，不會有人看到。")]),
+    ent("memory3", "sign", 10, 7, [nar("一則很久以前的回應："), hand("", "有人在嗎？"), nar("底下有一萬則回應，全部寫著："), hand("", "有。")]),
 ]
 addmap("abyss1", "精華區深淵", ab, "abyss", abyss_ents,
        warps=[(12, 19, "village", 13, 4, "D"), (12, 1, "core", 8, 12, "U")],
@@ -1586,7 +1587,7 @@ def check_script(sc, where):
             err(f"{where}: bad cmd {cmd!r}")
             continue
         op = cmd[0]
-        if op == "say":
+        if op in ("say", "hand"):
             if len(cmd) < 3:
                 err(f"{where}: say without text")
         elif op == "if":

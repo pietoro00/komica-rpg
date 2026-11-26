@@ -129,6 +129,20 @@
                                         <p>@en.Title</p>
                                         <p class="small">Lv @lv　遊玩時間 @(G.PlayTime / 3600):@((G.PlayTime / 60 % 60).ToString("00"))　已看過的結局 @en.Seen / 3</p>
                                         <p class="small">@(en.Seen < 3 ? "（還有其他的結局……）" : "你看過了所有的結局。謝謝遊玩。")</p>
+                                        @{ var rec = G.AdventureRecord(); }
+                                        <div class="rec">
+                                            <b>本次冒險紀錄</b>
+                                            <table>
+                                                @foreach (var (rl, rv) in rec.Rows)
+                                                {
+                                                    <tr><th>@rl</th><td>@rv</td></tr>
+                                                }
+                                            </table>
+                                            @if (rec.Done.Count > 0)
+                                            {
+                                                <p class="small">@string.Join("、", rec.Done)</p>
+                                            }
+                                        </div>
                                     </div>
                                 </div>
                             }
@@ -141,6 +155,25 @@
                     }
 
                     <div id="ov">
+                        @if (G.Mode == "map" && G.Menus.Count == 0 && G.Dialog == null && G.Board == null && G.GoalArrow() is { } ga)
+                        {
+                            @* 目標箭頭：目標在畫面裡顯示在頭上，在畫面外就貼著邊緣指方向 *@
+                            var amp = G.CurMap;
+                            var acx = Math.Clamp(G.X - 7, 0, amp.W - Game.VW);
+                            var acy = Math.Clamp(G.Y - 5, 0, amp.H - Game.VH);
+                            double apx = (ga.X - acx) * T + T / 2.0, apy = (ga.Y - acy) * T + T / 2.0;
+                            if (apx >= 0 && apx <= Game.VW * T && apy >= 0 && apy <= Game.VH * T)
+                            {
+                                <div class="garrow on" style="left:@(Px(apx))px;top:@(Px(apy - T + 2))px" title="@ga.Label">▼</div>
+                            }
+                            else
+                            {
+                                double ox = Game.VW * T / 2.0, oy = Game.VH * T / 2.0, adx = apx - ox, ady = apy - oy;
+                                var k = Math.Min((ox - 34) / Math.Max(1e-6, Math.Abs(adx)), (oy - 34) / Math.Max(1e-6, Math.Abs(ady)));
+                                var ang = Math.Atan2(ady, adx) * 180 / Math.PI;
+                                <div class="garrow edge" style="left:@(Px(ox + adx * k))px;top:@(Px(oy + ady * k))px" title="@ga.Label"><span style="transform:rotate(@(Px(ang))deg)">➤</span></div>
+                            }
+                        }
                         @if (G.Board != null)
                         {
                             @BoardView(G.Board)
@@ -199,7 +232,7 @@
                         @if (G.Dialog != null)
                         {
                             var d = G.Dialog;
-                            var hand = d.Speaker.Length > 0 && G.D.Hand.Contains(d.Speaker);
+                            var hand = d.Hand || G.HandAll || (d.Speaker.Length > 0 && G.D.Hand.Contains(d.Speaker));
                             <div class="dialog @(d.Speaker.Length == 0 ? "nar" : "") @(hand ? "hand" : "")" @onclick="() => G!.ClickDialog()" @onclick:stopPropagation="true">
                                 @if (d.Speaker.Length > 0)
                                 {
@@ -222,8 +255,8 @@
                         }
                         @if (G.Auto && G.Mode is "map" or "battle")
                         {
-                            <div class="autob" title="點一下關閉全自動模式" @onclick="() => G!.SetAuto(false)" @onclick:stopPropagation="true">
-                                <b>AUTO</b>@if (G.AutoNote.Length > 0) { <span>@G.AutoNote</span> }
+                            <div class="autob" title="點一下關閉全自動模式。→ 加速、← 減速" @onclick="() => G!.SetAuto(false)" @onclick:stopPropagation="true">
+                                <b>AUTO@(G.AutoMul > 1 ? " ×" + G.AutoMul : "")</b>@if (G.AutoMain) { <i>主線</i> }@if (G.AutoNote.Length > 0) { <span>@G.AutoNote</span> }
                             </div>
                         }
                         @if (G.Toasts.Count > 0)
@@ -259,12 +292,13 @@
     <button class="fsx" tabindex="-1" data-fs aria-label="離開全螢幕">✕ 離開全螢幕</button>
     <p class="help">
         <b>方向鍵／WASD</b> 移動、選擇　<b>Enter／空白鍵／Z</b> 調查、對話、確認　<b>Esc／X</b> 打開選單、取消　<b>F</b> 全螢幕<br />
-        各地的討論板也常有島民留下的情報；魔王準備大招時記得「防禦」，野外的怪物看得到，碰到才會開戰，可以繞路躲開；靠太近牠會追過來。打不贏就發動島民技能「無視」，或在「設定」改成簡單模式。只想看劇情的話，開新串時選「全自動」（或在「設定」打開全自動模式），電腦會幫你一路玩到結局。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。
+        各地的討論板也常有島民留下的情報；魔王準備大招時記得「防禦」，野外的怪物看得到，碰到才會開戰，可以繞路躲開；靠太近牠會追過來。打不贏就發動島民技能「無視」，或在「設定」改成簡單模式。只想看劇情的話，開新串時選「全自動」（或在「設定」打開全自動模式），電腦會幫你一路玩到結局，進行中按 → 加速（×2～×4）、← 減速。自己玩時畫面上的黃色箭頭會指出目前目標的方向（可在「設定」關掉）。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。
     </p>
 </div>
 
 @code {
     const int T = Game.T;
+    static string Px(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
     Game? G;
     string? loadError;
     ElementReference rootRef;

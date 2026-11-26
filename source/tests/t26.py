@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 
 MAXMIN = float(sys.argv[1]) if len(sys.argv) > 1 else 40
 SPD = float(sys.argv[2]) if len(sys.argv) > 2 else 0.02
+MAIN = len(sys.argv) > 3 and sys.argv[3] == 'main'   # 第三個參數 main：只跑主線
 
 STATE = """(()=>{const S=KDBG.S;return {mode:S.mode,map:S.mapId,x:S.x,y:S.y,flags:Object.keys(S.flags).filter(f=>!f.startsWith('chest')).length,
  chests:Object.keys(S.flags).filter(f=>f.startsWith('chest')).length,lv:S.party.map(a=>a.id+a.level).join(','),karma:S.karma,gold:S.gold,
@@ -25,6 +26,7 @@ async def main():
         await pg.keyboard.press('Enter'); await pg.wait_for_timeout(200)          # 開新串
         await pg.keyboard.press('ArrowDown'); await pg.keyboard.press('ArrowDown')  # 全自動
         await pg.keyboard.press('Enter')
+        if MAIN: await pg.evaluate('KDBG.S.autoMain = true')
         t0 = time.time(); last_flags = -1; last_change = time.time(); shots = 0
         while time.time() - t0 < MAXMIN * 60:
             await pg.wait_for_timeout(5000)

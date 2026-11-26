@@ -50,7 +50,7 @@ public partial class Game
     public bool Busy { get; private set; }
     public List<Menu> Menus { get; } = new();
     public DialogState? Dialog { get; private set; }
-    (string Speaker, string Text)? lastSay;
+    (string Speaker, string Text, bool Hand)? lastSay;
     public List<Toast> Toasts { get; } = new();
     public string? Banner { get; private set; }
     public int BannerId { get; private set; }
@@ -84,13 +84,15 @@ public partial class Game
     static readonly double[] BSpeeds = { 1, 0.6, 0.35 };
     static readonly string[] BSpeedNames = { "普通", "快", "超快" };
     int bspeed;
-    Task BWait(int ms) => Task.Delay((int)(ms * BSpeeds[bspeed]));
+    Task BWait(int ms) => Task.Delay((int)(ms * BSpeeds[bspeed] / (Auto ? AutoMuls[autoSpeed] : 1)));
 
     public async Task LoadSettings()
     {
         var meta = await LoadMeta();
         bspeed = Math.Clamp(meta.Speed, 0, BSpeeds.Length - 1);
-        autoSpeed = Math.Clamp(meta.AutoSpeed, 0, AutoSpeeds.Length - 1);
+        autoSpeed = Math.Clamp(meta.AutoSpeed, 0, AutoMuls.Length - 1);
+        ShowArrow = meta.Arrow ?? true;
+        HandAll = meta.Hand;
     }
 
     void ResetState()
@@ -100,7 +102,7 @@ public partial class Game
         Busy = false; Menus.Clear(); Dialog = null; lastSay = null; Toasts.Clear(); Banner = null; BannerId++;
         Battle = null; Ending = null; waitOk = null; pendingAuto = false;
         Easy = false; Mons = new(); invuln = 0;
-        Dex = new(); Visited = new(); Card = null; Board = null; Popups.Clear();
+        Dex = new(); Visited = new(); Card = null; Board = null; Popups.Clear(); Stats = new();
         ResetAuto();
     }
 
@@ -252,7 +254,7 @@ public partial class Game
         {
             MapId = MapId, X = X, Y = Y, Dir = Dir, Gold = Gold, Inv = new(Inv), Flags = new(Flags), Karma = Karma,
             Quests = new(Quests), Goal = Goal, PlayTime = PlayTime, Dex = new(Dex), Visited = new(Visited), Easy = Easy,
-            Auto = Auto, AutoSeen = new(AutoSeen), GoalMap = goalMap,
+            Auto = Auto, AutoSeen = new(AutoSeen), GoalMap = goalMap, AutoMain = AutoMain, Stats = Stats,
             Party = Party.Select(a => new SaveActor { Id = a.Id, Level = a.Level, Exp = a.Exp, Hp = a.Hp, Mp = a.Mp, Equip = new(a.Equip) }).ToList(),
         };
         try
@@ -286,7 +288,7 @@ public partial class Game
         MapId = data.MapId; X = data.X; Y = data.Y; Dir = data.Dir; Gold = data.Gold; Inv = data.Inv; Flags = data.Flags;
         Karma = data.Karma; Quests = data.Quests; Goal = data.Goal; PlayTime = data.PlayTime;
         Dex = data.Dex ?? new(); Visited = data.Visited ?? new(); Easy = data.Easy;
-        Auto = data.Auto; AutoSeen = data.AutoSeen ?? new(); goalMap = data.GoalMap;
+        Auto = data.Auto; AutoSeen = data.AutoSeen ?? new(); goalMap = data.GoalMap; AutoMain = data.AutoMain; Stats = data.Stats ?? new();
         Party = data.Party.Select(p => new Actor { Id = p.Id, Level = p.Level, Exp = p.Exp, Hp = p.Hp, Mp = p.Mp, Equip = p.Equip }).ToList();
         Mode = "map";
         SpawnMons();
@@ -305,11 +307,11 @@ public partial class Game
     }
 
     // ================================================================ 對話、選單、提示
-    Task Say(string speaker, string text)
+    Task Say(string speaker, string text, bool hand = false)
     {
-        lastSay = (speaker, text);
+        lastSay = (speaker, text, hand);
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Dialog = new DialogState(speaker, text, tcs);
+        Dialog = new DialogState(speaker, text, tcs, hand);
         Render();
         return tcs.Task;
     }
@@ -326,7 +328,7 @@ public partial class Game
     Task<int> Choose(List<string> labels)
     {
         var tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (lastSay is { } ls) Dialog = new DialogState(ls.Speaker, ls.Text, null);
+        if (lastSay is { } ls) Dialog = new DialogState(ls.Speaker, ls.Text, null, ls.Hand);
         PushMenu(new Menu
         {
             Cls = "choice",
@@ -434,7 +436,8 @@ public partial class Game
         switch (op)
         {
             case "say":
-                for (var i = 2; i < c.GetArrayLength(); i++) await Say(Str(c, 1), Fmt(Str(c, i)));
+            case "hand":   // hand：用手寫字顯示（卡片、留言）
+                for (var i = 2; i < c.GetArrayLength(); i++) await Say(Str(c, 1), Fmt(Str(c, i)), op == "hand");
                 break;
             case "if":
                 if (Cond(Str(c, 1))) return await Run(c[2]);
@@ -751,6 +754,7 @@ public partial class Game
             return 2;
         }
         X = nx; Y = ny;
+        Stats.Steps++;
         StepAnim();
         var w = CurMap.WarpList.FirstOrDefault(q => q.X == nx && q.Y == ny);
         if (w != null)
@@ -891,6 +895,12 @@ public partial class Game
     public void Press(string btn, bool repeat)
     {
         if (btn is "ok" or "back" or "menu" && repeat) return;
+        // 全自動進行中：→ 加速（×2、×3、×4）、← 減速。玩家自己打開選單時照常操作
+        if (Auto && (btn is "left" or "right") && !(Menus.Count > 0 && Menus[0].Cls == "main"))
+        {
+            if (!repeat) AutoSpeedStep(btn == "right" ? 1 : -1);
+            return;
+        }
         if (Card != null)
         {
             if (btn == "ok") CloseCard(Card);
