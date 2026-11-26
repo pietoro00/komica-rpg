@@ -1,0 +1,549 @@
+@* 遊戲畫面：只負責把 Game 的狀態畫出來，並把按鍵交給 Game.Press() *@
+@using System.Text
+@inject HttpClient Http
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="root" tabindex="0" @ref="rootRef" @onkeydown="OnKey" @onclick="FocusRoot">
+    <header>
+        <h1>糟糕島物語</h1>
+        <p>～無名氏與最後的回應～　K 島背景的網頁 JRPG（C# / Blazor WebAssembly）</p>
+        @* 全螢幕的切換由 index.html 的 kfs 處理（要在點擊當下呼叫瀏覽器的全螢幕 API） *@
+        <button class="fsbtn" tabindex="-1" data-fs>⛶ 全螢幕遊玩</button>
+    </header>
+
+    <div class="stage" id="stage">
+        <div class="frame" id="frame">
+            <div id="scr">
+                @if (G == null)
+                {
+                    <div class="loading">@(loadError ?? "載入中…")</div>
+                }
+                else
+                {
+                    switch (G.Mode)
+                    {
+                        case "title":
+                            <div class="full title">
+                                <img class="t-hero" src="img/hero.png" alt="" />
+                                <h1>@G.D.Title</h1>
+                                <p class="sub">@G.D.Subtitle</p>
+                                <p class="hint">↑↓ 選擇　Enter 決定</p>
+                            </div>
+                            break;
+                        case "map":
+                            var mp = G.CurMap;
+                            var cx = Math.Clamp(G.X - 7, 0, mp.W - Game.VW);
+                            var cy = Math.Clamp(G.Y - 5, 0, mp.H - Game.VH);
+                            <div id="maplayer" @key="G.MapId" style="transform:translate(@(-cx * T)px,@(-cy * T)px)">
+                                <div id="tiles" style="width:@(mp.W * T)px;height:@(mp.H * T)px">
+                                    @for (var y = 0; y < mp.H; y++)
+                                    {
+                                        for (var x = 0; x < mp.W; x++)
+                                        {
+                                            <i class="tile" style="left:@(x * T)px;top:@(y * T)px;background-image:url(img/@(G.D.TileMap[mp.Rows[y][x]].Image).png)"></i>
+                                        }
+                                    }
+                                </div>
+                                @foreach (var ent in G.VisibleEnts())
+                                {
+                                    var sp = ent.Chest != null ? (G.Flags.GetValueOrDefault(G.ChestFlag(ent)) ? "chest_open" : "chest") : ent.Sprite;
+                                    <img class="sprite" src="img/@(sp).png" alt="" style="left:@(ent.X * T)px;top:@(ent.Y * T)px" />
+                                    @if (ent.Mark != null && G.Cond(ent.Mark))
+                                    {
+                                        <div class="mark" style="left:@(ent.X * T)px;top:@(ent.Y * T - 32)px">！</div>
+                                    }
+                                }
+                                @* 明雷：怪物用 @key 保留同一個元素，移動時才有平滑的動畫 *@
+                                @foreach (var mon in G.Mons)
+                                {
+                                    <img @key="mon.Id" class="sprite mon @(mon.Chasing ? "chase" : "")" src="img/@(mon.Sprite).png" alt="" style="left:@(mon.X * T)px;top:@(mon.Y * T)px" />
+                                }
+                                <img id="pl" class="sprite pl @(G.Dir == "L" ? "flip" : "")" src="img/@(G.HeroSprite).png" alt="" style="left:@(G.X * T)px;top:@(G.Y * T)px" />
+                            </div>
+                            break;
+                        case "battle":
+                            var B = G.Battle;
+                            if (B != null)
+                            {
+                                <div class="bscreen bg-@B.Bg @(B.Intro ? "intro" : "")">
+                                    <div class="log">
+                                        @foreach (var line in B.Log)
+                                        {
+                                            <div>@line</div>
+                                        }
+                                    </div>
+                                    <div class="foes">
+                                        @foreach (var e in B.Enemies)
+                                        {
+                                            var known = G.KnownText(e.Id);
+                                            <div class="foe @(e.Def.Size == "l" ? "big" : "") @(e.Alive ? "" : "dead") @e.Fx @(B.Hi == e ? "hi" : "")">
+                                                <div class="foe-name">@e.Name</div>
+                                                @Bar("en", e.Hp, e.MaxHp)
+                                                <div class="badges">@Badges(e)@if (known.Length > 0) {<span class="weak">@known</span>}</div>
+                                                <img src="img/@(e.Def.Sprite).png" alt="@e.Name" />
+                                                @Pops(e)
+                                            </div>
+                                        }
+                                    </div>
+                                    <div class="gauge @(B.Gauge >= 100 ? "gmax" : "")">
+                                        <b>推</b><span class="gbar"><span style="width:@(B.Gauge)%"></span></span><em>@(B.Gauge >= 100 ? "MAX！合體技" : B.Gauge + "%")</em>
+                                    </div>
+                                    <div class="bpanel">
+                                        <div class="party">
+                                            @for (var i = 0; i < G.Party.Count; i++)
+                                            {
+                                                var a = G.Party[i];
+                                                <div class="pc @(B.ActorIndex == i ? "act" : "") @(a.Hp <= 0 ? "ko" : "") @a.Fx @(B.Hi == a ? "hi" : "")">
+                                                    @Pops(a)
+                                                    <img src="img/@(G.Ad(a).Sprite).png" alt="" />
+                                                    <div class="pc-b">
+                                                        <div class="pc-n"><b>@G.Ad(a).Name</b> Lv @(a.Level) @Badges(a)</div>
+                                                        <div class="pc-r">HP @Bar("hp", a.Hp, G.MaxHp(a)) <span>@a.Hp</span></div>
+                                                        <div class="pc-r">MP @Bar("mp", a.Mp, G.MaxMp(a)) <span>@a.Mp</span></div>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="bslot"></div>
+                                    </div>
+                                </div>
+                            }
+                            break;
+                        case "gameover":
+                            <div class="full over"><h2>本串已沉。</h2><p>全隊倒下了……沒有人回應，島沉得更深了。</p></div>
+                            break;
+                        case "ending":
+                            var en = G.Ending;
+                            if (en != null && !en.Card)
+                            {
+                                <div class="full ending dim"><h2>@en.Title</h2></div>
+                            }
+                            else if (en != null)
+                            {
+                                var lv = G.Party.Count > 0 ? G.Party[0].Level : 1;
+                                <div class="full ending">
+                                    <div class="post">
+                                        <div class="post-h"><b>無標題</b>　名稱：<b class="nm">無名氏</b>　ID:@en.PostId　No.1</div>
+                                        <p>～ 完 ～</p>
+                                        <p>@en.Title</p>
+                                        <p class="small">Lv @lv　遊玩時間 @(G.PlayTime / 3600):@((G.PlayTime / 60 % 60).ToString("00"))　已看過的結局 @en.Seen / 3</p>
+                                        <p class="small">@(en.Seen < 3 ? "（還有其他的結局……）" : "你看過了所有的結局。謝謝遊玩。")</p>
+                                    </div>
+                                </div>
+                            }
+                            break;
+                    }
+
+                    if (G.Mode == "map" && G.Banner != null)
+                    {
+                        <div id="bn"><div class="banner" @key="G.BannerId">@G.Banner</div></div>
+                    }
+
+                    <div id="ov">
+                        @if (G.Board != null)
+                        {
+                            @BoardView(G.Board)
+                        }
+                        @if (G.Card != null)
+                        {
+                            var cd = G.Card;
+                            <div class="card" @onclick="() => G!.ClickOverlay(false)" @onclick:stopPropagation="true">
+                                <div class="ch">無標題　名稱：無名氏　No.@(cd.Title.Length * 1000 + 7)</div>
+                                <div class="cl">@cd.Label</div>
+                                <div class="ct">@cd.Title</div>
+                                <div class="cs">@cd.Sub</div>
+                            </div>
+                        }
+                        @{
+                            var battleMenus = G.Menus.Where(m => m.Cls.Contains("battle")).ToList();
+                            var others = G.Menus.Where(m => !m.Cls.Contains("battle")).ToList();
+                        }
+                        @if (G.Mode == "battle")
+                        {
+                            if (battleMenus.Count > 0)
+                            {
+                                <div class="bmenu">@MenuBox(battleMenus[^1], true)</div>
+                            }
+                            if (G.Battle != null && G.Battle.Done)
+                            {
+                                <div class="okp">Enter ▼</div>
+                            }
+                        }
+                        @if (others.Count > 0)
+                        {
+                            var centered = others[^1].Cls == "center" || others[0].Cls.Contains("title");
+                            if (centered || others[0].Cls == "choice" || others[0].Cls == "shop")
+                            {
+                                <div class="mwrap @(centered ? "centered" : "")">
+                                    @for (var i = 0; i < others.Count; i++)
+                                    {
+                                        @MenuBox(others[i], i == others.Count - 1)
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="mwrap cascade">
+                                    @if (others[0].Cls == "main")
+                                    {
+                                        @PartySummary()
+                                    }
+                                    @for (var i = 0; i < others.Count; i++)
+                                    {
+                                        <div class="casc" style="left:@(14 + i * 112)px;top:@(14 + i * 26)px">@MenuBox(others[i], i == others.Count - 1)</div>
+                                    }
+                                </div>
+                            }
+                        }
+                        @if (G.Dialog != null)
+                        {
+                            var d = G.Dialog;
+                            <div class="dialog @(d.Speaker.Length == 0 ? "nar" : "")" @onclick="() => G!.ClickDialog()" @onclick:stopPropagation="true">
+                                @if (d.Speaker.Length > 0)
+                                {
+                                    <div class="spk">@d.Speaker</div>
+                                }
+                                <div class="dt">@d.Text</div>
+                                @if (G.Menus.Count == 0)
+                                {
+                                    <div class="nx">▼</div>
+                                }
+                            </div>
+                        }
+                        @if (G.Toasts.Count > 0)
+                        {
+                            <div class="toasts">
+                                @foreach (var t in G.Toasts.ToList())
+                                {
+                                    <div>@t.Text</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* 先載入主角的所有方向與走路圖，換圖時才不會閃一下 *@
+    <div style="display:none" aria-hidden="true">@foreach (var n in Game.HeroFrames) { <img src="img/@(n).png" alt="" /> }</div>
+    <div class="controls">
+        <div class="dpad">
+            <button class="u" tabindex="-1" data-btn="up" @onmousedown:preventDefault="true" aria-label="上">▲</button>
+            <button class="l" tabindex="-1" data-btn="left" @onmousedown:preventDefault="true" aria-label="左">◀</button>
+            <button class="r" tabindex="-1" data-btn="right" @onmousedown:preventDefault="true" aria-label="右">▶</button>
+            <button class="d" tabindex="-1" data-btn="down" @onmousedown:preventDefault="true" aria-label="下">▼</button>
+        </div>
+        <div class="abtns">
+            <button class="abtn b" tabindex="-1" @onmousedown:preventDefault="true" @onclick='() => Press("back")' aria-label="取消">B</button>
+            <button class="abtn ok" tabindex="-1" @onmousedown:preventDefault="true" @onclick='() => Press("ok")' aria-label="確認">A</button>
+            <button class="abtn m" tabindex="-1" @onmousedown:preventDefault="true" @onclick='() => Press("menu")'>選單</button>
+        </div>
+    </div>
+    <button class="fsx" tabindex="-1" data-fs aria-label="離開全螢幕">✕ 離開全螢幕</button>
+    <p class="help">
+        <b>方向鍵／WASD</b> 移動、選擇　<b>Enter／空白鍵／Z</b> 調查、對話、確認　<b>Esc／X</b> 打開選單、取消　<b>F</b> 全螢幕<br />
+        各地的討論板也常有島民留下的情報；魔王準備大招時記得「防禦」，野外的怪物看得到，碰到才會開戰，可以繞路躲開；靠太近牠會追過來。打不贏就發動島民技能「無視」，或在「設定」改成簡單模式。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。
+    </p>
+</div>
+
+@code {
+    const int T = Game.T;
+    Game? G;
+    string? loadError;
+    ElementReference rootRef;
+    bool disposed;
+    DotNetObjectReference<GameView>? selfRef;
+
+    static readonly Dictionary<string, string> Keys = new()
+    {
+        ["ArrowUp"] = "up", ["w"] = "up", ["W"] = "up", ["ArrowDown"] = "down", ["s"] = "down", ["S"] = "down",
+        ["ArrowLeft"] = "left", ["a"] = "left", ["A"] = "left", ["ArrowRight"] = "right", ["d"] = "right", ["D"] = "right",
+        ["Enter"] = "ok", [" "] = "ok", ["z"] = "ok", ["Z"] = "ok", ["Escape"] = "back", ["x"] = "back", ["X"] = "back",
+        ["m"] = "menu", ["M"] = "menu", ["Backspace"] = "back",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var json = await Http.GetStringAsync("data/game.json");
+            var data = GameData.Load(json);
+            G = new Game(data,
+                key => JS.InvokeAsync<string?>("localStorage.getItem", key).AsTask(),
+                (key, value) => JS.InvokeVoidAsync("localStorage.setItem", key, value).AsTask());
+            G.Changed += OnChanged;
+            await G.CheckSave();
+            await G.LoadSettings();
+            G.ToTitle();
+            _ = TickLoop();
+            _ = MonLoop();
+        }
+        catch (Exception ex)
+        {
+            loadError = "載入失敗：" + ex.Message;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { await JS.InvokeVoidAsync("kfit"); } catch { /* 版面縮放不是必要功能 */ }
+            selfRef = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("khold", selfRef); } catch { /* 沒有長按也能一格一格走 */ }
+            try { await JS.InvokeVoidAsync("kfsInit", selfRef); } catch { /* 沒有提示也能用全螢幕 */ }
+            await rootRef.FocusAsync();
+        }
+        else if (G != null && G.Menus.Count > 0)
+        {
+            try { await JS.InvokeVoidAsync("kscroll"); } catch { /* 捲動不是必要功能 */ }
+        }
+    }
+
+    void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    async Task MonLoop()
+    {
+        while (!disposed)
+        {
+            await Task.Delay(100);
+            G?.MonTick();
+        }
+    }
+
+    async Task TickLoop()
+    {
+        while (!disposed)
+        {
+            await Task.Delay(1000);
+            G?.Tick();
+        }
+    }
+
+    void OnKey(KeyboardEventArgs e)
+    {
+        // 方向鍵交給 index.html 的 khold 處理（按住連續移動），這裡只處理其他按鍵
+        if (G != null && Keys.TryGetValue(e.Key, out var btn) && btn is not ("up" or "down" or "left" or "right"))
+            G.Press(btn, e.Repeat);
+    }
+
+    /// <summary>給 JavaScript 的 khold 呼叫：送出一次方向輸入，回傳目前是否在選單類畫面（決定連續輸入的速度）。</summary>
+    [JSInvokable]
+    public bool HoldPress(string btn, bool repeat)
+    {
+        if (G == null || disposed) return false;
+        G.Press(btn, repeat);
+        StateHasChanged();
+        return G.Menus.Count > 0 || G.Board != null || G.Mode != "map";
+    }
+
+    /// <summary>給 JavaScript 的 kfs 呼叫：剛進入全螢幕時顯示怎麼離開。</summary>
+    [JSInvokable]
+    public void FsHint(bool desktop)
+    {
+        if (G == null || disposed) return;
+        G.ShowToast(desktop ? "全螢幕：按 F 或右上角的按鈕離開" : "全螢幕：按右上角的按鈕離開");
+        StateHasChanged();
+    }
+
+    void Press(string btn) => G?.Press(btn, false);
+
+    async Task FocusRoot() => await rootRef.FocusAsync();
+
+    public void Dispose()
+    {
+        disposed = true;
+        selfRef?.Dispose();
+        if (G != null) G.Changed -= OnChanged;
+    }
+
+    // ---------------------------------------------------------------- 小工具
+    static int Pct(int a, int b) => Math.Clamp(a * 100 / Math.Max(1, b), 0, 100);
+
+    static MarkupString Bar(string cls, int v, int max) =>
+        new($"<span class=\"bar {cls}\"><span style=\"width:{Pct(v, max)}%\"></span></span>");
+
+    MarkupString Badges(Unit u)
+    {
+        var sb = new StringBuilder();
+        foreach (var k in u.St.Keys)
+            if (G!.D.Statuses.TryGetValue(k, out var s))
+                sb.Append($"<span class=\"badge\" style=\"--c:{s.Color}\">{System.Net.WebUtility.HtmlEncode(s.Name)}</span>");
+        return new MarkupString(sb.ToString());
+    }
+
+    RenderFragment MenuBox(Menu m, bool active) => __builder =>
+    {
+        var items = Game.MenuItems(m);
+        var cur = m.Cursor < items.Count ? items[m.Cursor] : null;
+        <div class="menu @m.Cls @(active ? "active" : "")">
+            @if (m.Title != null)
+            {
+                <div class="mt">@m.Title @if (m.Cls.Contains("shop")) {<span>@(G!.Gold) K 幣</span>}</div>
+            }
+            @if (m.Cls == "status" && m.Actor != null)
+            {
+                @StatusPanel(m.Actor)
+            }
+            @if (m.Cls == "quests")
+            {
+                @QuestPanel()
+            }
+            @if (m.Cls.Contains("dex") && cur != null && cur.Id != null)
+            {
+                <div class="dexpic">
+                    @if (G!.DexSeen(cur.Id))
+                    {
+                        <img src="img/@(G.D.Enemies[cur.Id].Sprite).png" alt="" />
+                    }
+                    else
+                    {
+                        <span>？</span>
+                    }
+                </div>
+            }
+            <ul>
+                @for (var i = 0; i < items.Count; i++)
+                {
+                    var idx = i;
+                    var it = items[i];
+                    <li class="@(i == m.Cursor ? "sel" : "") @(it.Disabled ? "dis" : "")" @onclick="() => G!.ClickMenuItem(idx)" @onclick:stopPropagation="true">
+                        <span>@it.Label</span>
+                        @if (!string.IsNullOrEmpty(it.Right))
+                        {
+                            <em>@it.Right</em>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (cur != null && !string.IsNullOrEmpty(cur.Desc))
+            {
+                <div class="md">@cur.Desc</div>
+            }
+        </div>
+    };
+
+    RenderFragment Pops(Unit u) => __builder =>
+    {
+        var key = Game.UnitKey(u);
+        foreach (var p in G!.Popups.Where(x => x.Key == key).ToList())
+        {
+            <span class="pop @p.Cls" @key="p.Id">@p.Text</span>
+        }
+    };
+
+    static readonly string[] WeekDays = { "日", "一", "二", "三", "四", "五", "六" };
+
+    RenderFragment BoardView(BoardState b) => __builder =>
+    {
+        var g = G!;
+        var bd = g.D.Boards[b.Id];
+        var posts = g.BoardPosts(b.Id);
+        <div class="board" @onclick="() => g.ClickOverlay(false)" @onclick:stopPropagation="true">
+            <div class="bh" @onclick="() => g.ClickOverlay(true)" @onclick:stopPropagation="true">@bd.Title<span>↑↓ 捲動　Enter／Esc 關閉　（@(b.Top + 1)/@posts.Count）</span></div>
+            <div class="bl">
+                @foreach (var (index, post) in posts.Skip(b.Top))
+                {
+                    var no = Game.PostNo(b.Id, index);
+                    var dt = new DateTime(2026, 11, 1 + index % 24, index * 7 % 24, index * 13 % 60, 0);
+                    var date = $"{dt:yy/MM/dd}({WeekDays[(int)dt.DayOfWeek]}){dt:HH:mm}";
+                    <div class="post @(index == 0 ? "op" : "") @(post.Owner ? "owner" : "")">
+                        <div class="ph">
+                            <b class="ttl">無標題</b> 名稱:
+                            @if (post.Owner)
+                            {
+                                <b class="own">島主？</b> @date <span>ID:????????</span> <span>No.@no</span>
+                            }
+                            else
+                            {
+                                <b class="nm">無名氏</b> @date <span>ID:@Game.HashId(b.Id + index)</span> <span>No.@no</span>
+                            }
+                        </div>
+                        <div class="pb">
+                            @foreach (var line in Game.PostText(b.Id, post.Text).Split('\n'))
+                            {
+                                if (line.StartsWith(">"))
+                                {
+                                    <span class="q">@line</span><br />
+                                }
+                                else
+                                {
+                                    @line<br />
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    };
+
+    RenderFragment StatusPanel(Actor a) => __builder =>
+    {
+        var g = G!;
+        var next = a.Level >= g.D.MaxLevel ? "—" : (g.ExpFor(a.Level + 1) - a.Exp).ToString();
+        <div class="stat">
+            <div class="stat-top">
+                <img src="img/@(g.Ad(a).Sprite).png" alt="" />
+                <div><b>@g.Ad(a).Name</b>　Lv @a.Level<br /><small>下一級還需 @next 經驗值</small></div>
+            </div>
+            <table>
+                <tr><th>HP</th><td>@a.Hp / @g.MaxHp(a)</td></tr>
+                <tr><th>MP</th><td>@a.Mp / @g.MaxMp(a)</td></tr>
+                <tr><th>攻擊</th><td>@g.Stat(a, "atk")</td></tr>
+                <tr><th>防禦</th><td>@g.Stat(a, "def")</td></tr>
+                <tr><th>魔力</th><td>@g.Stat(a, "mag")</td></tr>
+                <tr><th>速度</th><td>@g.Stat(a, "spd")</td></tr>
+            </table>
+            <div class="eq">
+                @foreach (var slot in new[] { "weapon", "armor", "acc" })
+                {
+                    var id = a.Equip.GetValueOrDefault(slot);
+                    <div>@Game.SlotName[slot]：@(id != null ? g.D.Items[id].Name : "—")</div>
+                }
+            </div>
+            <div class="sk">
+                @foreach (var s in g.SkillsOf(a))
+                {
+                    <span>@g.D.Skills[s].Name</span>
+                }
+            </div>
+        </div>
+    };
+
+    RenderFragment QuestPanel() => __builder =>
+    {
+        var g = G!;
+        <div class="quest">
+            <div class="goal"><small>目前目標</small><br />@(string.IsNullOrEmpty(g.Goal) ? "—" : g.Goal)</div>
+            <ul class="ql">
+                @if (g.Quests.Count == 0)
+                {
+                    <li><small>還沒有接到支線任務。</small></li>
+                }
+                @foreach (var (id, st) in g.Quests)
+                {
+                    <li class="@st"><b>@(st == "done" ? "✔" : "・") @g.D.Quests[id].Name</b><br /><small>@g.D.Quests[id].Desc</small></li>
+                }
+            </ul>
+        </div>
+    };
+
+    RenderFragment PartySummary() => __builder =>
+    {
+        var g = G!;
+        <div class="psum">
+            @foreach (var a in g.Party)
+            {
+                <div class="ps">
+                    <img src="img/@(g.Ad(a).Sprite).png" alt="" />
+                    <div><b>@g.Ad(a).Name</b> Lv @a.Level<br />HP @a.Hp/@g.MaxHp(a)　MP @a.Mp/@g.MaxMp(a)</div>
+                </div>
+            }
+            <div class="ps-f"><span>@g.Gold K 幣@if (g.Easy) {<small class="easy">簡單</small>}</span><span>@(g.PlayTime / 3600):@((g.PlayTime / 60 % 60).ToString("00"))</span></div>
+            <div class="ps-g">@g.Goal</div>
+        </div>
+    };
+}

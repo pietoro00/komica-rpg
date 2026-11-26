@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>糟糕島物語</title>
+    <base href="/" />
+    <link rel="stylesheet" href="css/game.css" />
+</head>
+<body>
+    <div id="app"><div class="loading" style="position:fixed">載入中…</div></div>
+    <script>
+        // 防止方向鍵與空白鍵捲動網頁（遊戲邏輯都在 C#）
+        window.addEventListener('keydown', function (e) {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].indexOf(e.key) >= 0) e.preventDefault();
+        });
+        // 讓選單的目前項目保持在可見範圍內
+        window.kscroll = function () {
+            document.querySelectorAll('.menu.active li.sel').forEach(function (li) { li.scrollIntoView({ block: 'nearest' }); });
+        };
+        // 按住方向鍵／十字鍵連續輸入：按下立刻動一次，按住不放就持續觸發
+        // 地圖上每 140 毫秒走一格；選單裡先停 280 毫秒，之後每 90 毫秒移動游標
+        window.khold = function (ref) {
+            var KEYS = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down',
+                ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
+            var held = [], timer = 0, gen = 0;
+            function cur() { return held.length ? held[held.length - 1] : null; }
+            function send(btn, repeat) {
+                return ref.invokeMethodAsync('HoldPress', btn, repeat).catch(function () { return false; });
+            }
+            function mark() {
+                var c = cur(), name = c ? c.btn : '';
+                document.querySelectorAll('.dpad [data-btn]').forEach(function (b) { b.classList.toggle('on', b.dataset.btn === name); });
+            }
+            function loop(first, menu) {
+                clearTimeout(timer);
+                var my = ++gen;
+                timer = setTimeout(function () {
+                    var h = cur();
+                    if (!h || my !== gen) return;
+                    send(h.btn, true).then(function (m) { if (my === gen) loop(false, m); });
+                }, menu ? (first ? 280 : 90) : 140);
+            }
+            function fire(btn) {
+                clearTimeout(timer);
+                var my = ++gen;
+                send(btn, false).then(function (m) { if (my === gen) loop(true, m); });
+            }
+            function start(src, btn) {
+                held = held.filter(function (h) { return h.src !== src; });
+                held.push({ src: src, btn: btn });
+                fire(btn); mark();
+            }
+            function move(src, btn) {
+                var h = held.filter(function (x) { return x.src === src; })[0];
+                if (!h || h.btn === btn) return;
+                h.btn = btn;
+                if (cur() === h) fire(btn);
+                mark();
+            }
+            function end(src) {
+                var n = held.length;
+                held = held.filter(function (h) { return h.src !== src; });
+                if (held.length === n) return;
+                if (!held.length) { clearTimeout(timer); gen++; }
+                mark();
+            }
+            function clear() { held = []; clearTimeout(timer); gen++; mark(); }
+            window.addEventListener('keydown', function (e) {
+                var b = KEYS[e.key];
+                if (!b) return;
+                var src = 'k' + e.code;
+                if (!held.some(function (h) { return h.src === src; })) start(src, b);
+            });
+            window.addEventListener('keyup', function (e) { end('k' + e.code); });
+            window.addEventListener('blur', clear);
+            document.addEventListener('visibilitychange', function () { if (document.hidden) clear(); });
+            // 十字鍵用事件委派：Blazor 重新繪製按鈕也不會失效
+            function padBtn(t) { return t && t.closest ? t.closest('.dpad [data-btn]') : null; }
+            document.addEventListener('pointerdown', function (e) {
+                var btn = padBtn(e.target);
+                if (!btn) return;
+                e.preventDefault();
+                try { btn.setPointerCapture(e.pointerId); } catch (_) { /* 舊瀏覽器沒有也能用 */ }
+                start('p' + e.pointerId, btn.dataset.btn);
+            });
+            document.addEventListener('pointermove', function (e) {
+                var btn = padBtn(document.elementFromPoint(e.clientX, e.clientY));
+                if (btn) move('p' + e.pointerId, btn.dataset.btn);
+            });
+            ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (ev) {
+                document.addEventListener(ev, function (e) { end('p' + e.pointerId); }, true);
+            });
+            document.addEventListener('contextmenu', function (e) { if (padBtn(e.target)) e.preventDefault(); });
+        };
+        // 依視窗寬度縮放遊戲畫面（只處理版面）；全螢幕時放大到剛好塞滿整個螢幕
+        function kfitNow() {
+            var stage = document.getElementById('stage'), frame = document.getElementById('frame');
+            if (!stage || !frame) return;
+            var k = document.body.classList.contains('fs')
+                ? Math.min(window.innerWidth / 774, window.innerHeight / 582)
+                : Math.min(1, (document.documentElement.clientWidth - 16) / 774);
+            frame.style.transform = 'scale(' + k + ')';
+            stage.style.width = 774 * k + 'px';
+            stage.style.height = 582 * k + 'px';
+        }
+        window.kfit = function () {
+            window.addEventListener('resize', kfitNow);
+            kfitNow();
+        };
+        // 全螢幕：支援全螢幕 API 的瀏覽器（電腦、Android、iPad）會真的進入全螢幕；
+        // 不支援的（iPhone 的 Safari）就把遊戲畫面放大到填滿可見範圍。按鍵在手機上半透明疊在畫面上（見 game.css）
+        (function () {
+            var nativeFs = false, hintRef = null;
+            function active() { return document.body.classList.contains('fs'); }
+            function nativeEl() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+            function set(on) {
+                document.body.classList.toggle('fs', on);
+                kfitNow();
+                if (on && hintRef) hintRef.invokeMethodAsync('FsHint', matchMedia('(hover:hover) and (pointer:fine)').matches).catch(function () { });
+            }
+            function toggle() {
+                if (!active()) {
+                    set(true);
+                    var el = document.documentElement;
+                    try {
+                        var r = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen ? el.webkitRequestFullscreen() : null;
+                        if (r && r.catch) r.catch(function () { /* 被拒絕時維持網頁內的全螢幕 */ });
+                    } catch (_) { /* 不支援時維持網頁內的全螢幕 */ }
+                } else {
+                    set(false);
+                    if (nativeEl()) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (_) { } }
+                }
+            }
+            function changed() {
+                if (nativeEl()) nativeFs = true;
+                else if (nativeFs) { nativeFs = false; if (active()) set(false); } // 用 Esc 或返回鍵離開了瀏覽器全螢幕
+                kfitNow();
+            }
+            // 按鈕用事件委派：Blazor 重新繪製也不會失效
+            document.addEventListener('click', function (e) {
+                if (e.target && e.target.closest && e.target.closest('[data-fs]')) toggle();
+            });
+            window.addEventListener('keydown', function (e) {
+                if ((e.key === 'f' || e.key === 'F') && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggle(); }
+            });
+            document.addEventListener('fullscreenchange', changed);
+            document.addEventListener('webkitfullscreenchange', changed);
+            window.kfsInit = function (ref) { hintRef = ref; };
+        })();
+    </script>
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+</html>

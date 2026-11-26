@@ -6,5 +6,15 @@
     "Referrer-Policy": "no-referrer",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), clipboard-read=()",
     "Cache-Control": "no-cache"
-  }
+  },
+  "routes": [
+    {
+      "route": "/source/*",
+      "statusCode": 404
+    },
+    {
+      "route": "/HANDOFF.md",
+      "statusCode": 404
+    }
+  ]
 }
