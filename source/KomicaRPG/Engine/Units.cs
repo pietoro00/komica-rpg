@@ -138,6 +138,9 @@ public class SaveData
     public Dictionary<string, DexEntry> Dex { get; set; } = new();
     public Dictionary<string, bool> Visited { get; set; } = new();
     public bool Easy { get; set; }
+    public bool Auto { get; set; }
+    public Dictionary<string, string> AutoSeen { get; set; } = new();
+    public string? GoalMap { get; set; }
 }
 
 /// <summary>地圖上看得到的怪物（明雷）。</summary>
@@ -169,6 +172,7 @@ public class MetaData
 {
     public List<string> Endings { get; set; } = new();
     public int Speed { get; set; }
+    public int AutoSpeed { get; set; }
 }
 
 /// <summary>怪物圖鑑的一筆紀錄。</summary>

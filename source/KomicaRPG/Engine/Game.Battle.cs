@@ -144,14 +144,20 @@ public partial class Game
                 if (!act.U.Alive) continue;
                 await ExecAction(act);
                 result = CheckEnd();
+                if (result == "lose" && Auto) { await AutoRevive(); result = null; }
                 if (result != null) break;
             }
             if (result == null)
             {
                 await EndOfRound();
                 result = CheckEnd();
+                if (result == "lose" && Auto) result = null;
             }
+            if (result == null && Auto) await AutoRevive();
         }
+        if (Auto)
+            foreach (var a in Party)
+                if (a.Hp <= 0) { a.Hp = MaxHp(a); a.Mp = MaxMp(a); }
 
         if (result == "win") await Victory();
         else if (result == "lose") await Msg("全隊倒下了……", 1100);
@@ -214,7 +220,7 @@ public partial class Game
             }
             b.ActorIndex = Party.IndexOf(a);
             Render();
-            var r = await CommandFor(a, i > 0);
+            var r = Auto ? await AutoCommand(a) : await CommandFor(a, i > 0);
             if (r.Back)
             {
                 acts[i] = null;

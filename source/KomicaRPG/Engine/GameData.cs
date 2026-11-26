@@ -32,6 +32,8 @@ public class GameData
     public List<string> NoTravel { get; set; } = new();
     public GaugeDef Gauge { get; set; } = new();
     public Dictionary<string, ComboDef> Combos { get; set; } = new();
+    /// <summary>對話框用「手寫字」顯示的角色。</summary>
+    public List<string> Hand { get; set; } = new();
 
     [JsonIgnore] public Dictionary<char, TileInfo> TileMap { get; } = new();
 

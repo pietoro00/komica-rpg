@@ -197,11 +197,15 @@ public partial class Game
             {
                 new() { Label = "戰鬥速度", Right = BSpeedNames[bspeed], Desc = "按 Enter 切換。設定會記在這台裝置上。" },
                 new() { Label = "難度", Right = Easy ? "簡單" : "普通", Desc = "按 Enter 切換，會跟著存檔記錄。簡單：敵人比較弱、受到的傷害較少、經驗值與 K 幣 1.5 倍、「無視」一定成功、怪物比較少也不太追人。" },
+                new() { Label = "全自動模式", Right = Auto ? "開" : "關", Desc = "開啟後由電腦幫你玩：自動走路、找人說話、做主線和支線、戰鬥、買裝備換裝備，一路玩到結局。難度會自動改成「簡單」，戰鬥中倒下會自動復活並補滿 HP／MP。按「選單」可以暫停，點畫面左上角的 AUTO 可以關掉。" },
+                new() { Label = "自動速度", Right = AutoSpeedNames[autoSpeed], Desc = "全自動模式的走路與對話速度。按 Enter 切換。" },
                 new() { Label = "返回" },
             },
             OnPick = (i, mi0) =>
             {
-                if (i == 2) { PopMenu(); return; }
+                if (i == 4) { PopMenu(); return; }
+                if (i == 2) { SetAuto(!Auto); if (Auto) Menus.Clear(); Render(); return; }
+                if (i == 3) { autoSpeed = (autoSpeed + 1) % AutoSpeeds.Length; _ = SaveSpeed(); Render(); return; }
                 if (i == 1)
                 {
                     Easy = !Easy;
@@ -220,6 +224,7 @@ public partial class Game
     {
         var meta = await LoadMeta();
         meta.Speed = bspeed;
+        meta.AutoSpeed = autoSpeed;
         try { await storageSet(MetaKey, System.Text.Json.JsonSerializer.Serialize(meta, SaveJson)); } catch { /* 無法存也沒關係 */ }
     }
 
@@ -480,6 +485,7 @@ public partial class Game
 
     Task OpenShop(string shopId)
     {
+        this.shopId = shopId;
         var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         void Close() { PopMenu(); tcs.TrySetResult(); }
         PushMenu(new Menu

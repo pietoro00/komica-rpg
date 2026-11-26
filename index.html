@@ -40,6 +40,17 @@ header p{margin:4px 0 0;color:#a89cc8;font-size:14px}
 .dialog.nar .dt{color:#d8d0ff}
 .spk{position:absolute;top:-17px;left:16px;background:#3a2a6a;border:2px solid var(--ink);border-radius:6px;padding:0 12px;font-size:16px;color:var(--gold)}
 .nx{position:absolute;right:16px;bottom:8px;font-size:14px;animation:bob .8s infinite}
+/* 手寫對話框（黃毛）：橫線筆記紙、每個字歪一點 */
+.dialog.hand{background:#f6efd9;background-image:repeating-linear-gradient(180deg,transparent 0 33px,#b9c9e8 33px 34px);background-position:0 14px;border-color:#7a5a3a;color:#23306a}
+.dialog.hand .spk{background:#c0392b;color:#fff6d8;border-color:#7a5a3a}
+.dialog.hand .dt{font-family:"Kaiti TC","STKaiti","BiauKai","DFKai-SB","標楷體","KaiTi","Klee","Yuji Syuku",cursive;font-size:23px;letter-spacing:2px}
+.dialog.hand .dt span{display:inline-block}
+.dialog.hand .nx{color:#c0392b}
+/* 全自動模式 */
+.autob{position:absolute;top:10px;left:10px;z-index:25;display:flex;align-items:center;gap:8px;max-width:520px;padding:3px 10px 3px 4px;background:#000c;border:2px solid #5fd35f;border-radius:6px;font-size:13px;color:#d8ffd0;pointer-events:auto;cursor:pointer}
+.autob b{background:#5fd35f;color:#102010;border-radius:3px;padding:0 6px;letter-spacing:1px;animation:autob 1.2s infinite}
+.autob span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes autob{50%{opacity:.55}}
 /* 選單 */
 .mwrap{position:absolute;inset:0;display:flex;gap:10px;padding:14px;align-items:flex-start;z-index:15}
 .mwrap.cascade{display:block}.casc{position:absolute}.cascade .psum{position:absolute;right:14px;top:14px}
@@ -250,11 +261,11 @@ body.fs .fsx{display:block;position:fixed;z-index:51;top:calc(10px + env(safe-ar
 </div>
 <button class="fsx" data-fs aria-label="離開全螢幕">✕ 離開全螢幕</button>
 <p class="help"><b>方向鍵／WASD</b> 移動、選擇　<b>Enter／空白鍵／Z</b> 調查、對話、確認　<b>Esc／X</b> 打開選單、取消　<b>F</b> 全螢幕<br>
-遇到岔路時看看告示牌，各地的討論板也常有島民留下的情報；魔王準備大招時記得「防禦」。野外的怪物看得到，碰到才會開戰，可以繞路躲開；靠太近牠會追過來。打不贏就發動島民技能「無視」，或在「設定」改成簡單模式。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。</p>
+遇到岔路時看看告示牌，各地的討論板也常有島民留下的情報；魔王準備大招時記得「防禦」。野外的怪物看得到，碰到才會開戰，可以繞路躲開；靠太近牠會追過來。打不贏就發動島民技能「無視」，或在「設定」改成簡單模式。只想看劇情的話，開新串時選「全自動」（或在「設定」打開全自動模式），電腦會幫你一路玩到結局。進度會在換地圖時自動存檔，也可以在選單裡手動存檔。</p>
 <section class="about" id="about">
   <h2>關於這個網站</h2>
   <p>這是一個以 K 島（糟糕島）文化為題材的同人網頁遊戲，與 Komica 官方無關。所有像素圖都是用程式畫出來的原創素材。</p>
-  <p>遊戲裡出現的島民人物（例如生日哥、照燒貓、智障神等）都是以島上流傳的梗為靈感的虛構角色，造型、劇情與台詞皆為創作，與真實人物無關。</p>
+  <p>遊戲裡出現的島民人物（例如生日哥、照燒貓、智障神、易經廚，以及塗鴉角落的黃毛、星芳、驚恐醬、獨眼、外來種、獅子老大、慕內等）都是以島上流傳的梗為靈感的虛構角色，造型、劇情與台詞皆為創作，與真實人物無關。</p>
   <ul>
     <li><b>沒有廣告、沒有追蹤器、沒有第三方程式。</b>網頁只會讀取這個網站自己的檔案（遊戲程式、劇情資料、圖片），不連任何外部網址。</li>
     <li><b>不需要登入、不會下載任何檔案、不會要求相機、位置、通知等權限。</b></li>
@@ -267,7 +278,7 @@ body.fs .fsx{display:block;position:fixed;z-index:51;top:calc(10px + env(safe-ar
     <li>也可以把這個網址貼到 VirusTotal 等網站安全檢查服務，用多家防毒引擎掃描。</li>
   </ul>
   <p>本站無毒，請安心回文。看完覺得不錯，推；沒什麼想說的，閱也可以。</p>
-  <p class="ver">版本 2026.11.26-1　回報問題時請附上這個版本號。</p>
+  <p class="ver">版本 2026.11.26-2　回報問題時請附上這個版本號。</p>
 </section>
 <script src="game.js"></script>
 </body>

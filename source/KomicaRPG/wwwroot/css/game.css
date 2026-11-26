@@ -33,6 +33,17 @@ header p{margin:4px 0 0;color:#a89cc8;font-size:14px}
 .dialog.nar .dt{color:#d8d0ff}
 .spk{position:absolute;top:-17px;left:16px;background:#3a2a6a;border:2px solid var(--ink);border-radius:6px;padding:0 12px;font-size:16px;color:var(--gold)}
 .nx{position:absolute;right:16px;bottom:8px;font-size:14px;animation:bob .8s infinite}
+/* 手寫對話框（黃毛）：橫線筆記紙、每個字歪一點 */
+.dialog.hand{background:#f6efd9;background-image:repeating-linear-gradient(180deg,transparent 0 33px,#b9c9e8 33px 34px);background-position:0 14px;border-color:#7a5a3a;color:#23306a}
+.dialog.hand .spk{background:#c0392b;color:#fff6d8;border-color:#7a5a3a}
+.dialog.hand .dt{font-family:"Kaiti TC","STKaiti","BiauKai","DFKai-SB","標楷體","KaiTi","Klee","Yuji Syuku",cursive;font-size:23px;letter-spacing:2px}
+.dialog.hand .dt span{display:inline-block}
+.dialog.hand .nx{color:#c0392b}
+/* 全自動模式 */
+.autob{position:absolute;top:10px;left:10px;z-index:25;display:flex;align-items:center;gap:8px;max-width:520px;padding:3px 10px 3px 4px;background:#000c;border:2px solid #5fd35f;border-radius:6px;font-size:13px;color:#d8ffd0;pointer-events:auto;cursor:pointer}
+.autob b{background:#5fd35f;color:#102010;border-radius:3px;padding:0 6px;letter-spacing:1px;animation:autob 1.2s infinite}
+.autob span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes autob{50%{opacity:.55}}
 /* 選單 */
 .mwrap{position:absolute;inset:0;display:flex;gap:10px;padding:14px;align-items:flex-start;z-index:15}
 .mwrap.cascade{display:block}.casc{position:absolute}.cascade .psum{position:absolute;right:14px;top:14px}

@@ -1217,3 +1217,157 @@ save(draw([
     "..kkkkkkkkkkkk..",
     "..kssssssssssk..",
 ]), "figure")
+
+# =====================================================================
+# 塗鴉角落的塗鴉廚們、照燒的兩派（虛構角色，造型為原創）
+# =====================================================================
+HEADS.update({
+    "elf": [  # 黃毛：黃色長髮、紅緞帶髮箍、短耳精靈、一紅一藍的異色瞳
+        "................",
+        "......kkkk......",
+        ".....kHHHHk.....",
+        "....kmmmmmmk....",
+        "...kHHhhhhHHk...",
+        "..khHhmhhuhHhk..",
+        "...kHhhhhhhHk...",
+        "...kHkkhhkkHk...",
+    ],
+    "star": [  # 星芳：咖啡色短髮、星星髮夾
+        "................",
+        "......kkkk.k....",
+        ".....kHHHHkyk...",
+        "....kHHHHHHkyk..",
+        "....kHhhhhHkk...",
+        "....khkhhkhk....",
+        "....kh*hh*hk....",
+        ".....kkhhkk.....",
+    ],
+    "spiky": [  # 外來種（男）：粉紅刺刺頭、壞笑
+        "...k..k..k......",
+        "...kHkHkkHk.k...",
+        "....kHHHHHHkHk..",
+        "....kHHHHHHHk...",
+        "....kHhhhhHk....",
+        "....khkhhkhk....",
+        "....khhhhkkk....",
+        ".....kkhhkk.....",
+    ],
+    "patch": [  # 獨眼／雀斑：金色長髮、眼罩、雀斑
+        "................",
+        "......kkkk......",
+        ".....kHHHHk.....",
+        "....kHHHHHHk....",
+        "...kHkkkhhHHk...",
+        "...kHkkkhkhHk...",
+        "...kHhdhhdhHk...",
+        "...kHkkhhkkHk...",
+    ],
+    "scared": [  # 驚恐醬：張大的眼睛和嘴、冷汗
+        "................",
+        "......kkkk......",
+        ".....kHHHHk..Z..",
+        "....kHHHHHHkZZ..",
+        "....kHeehheHk...",
+        "....kekhhkekk...",
+        "....khhkkhhk....",
+        ".....kkkkkk.....",
+    ],
+    "beanie": [  # 慕內：毛帽肥宅
+        "........k.......",
+        "......kkrkk.....",
+        ".....krrrrrk....",
+        "....krRrRrRrk...",
+        "....kxxxxxxxk...",
+        "....khkhhkhk....",
+        "....khhhhhhk....",
+        "....kkkhhkkk....",
+    ],
+    "hoodx": [  # 反照燒團員：拉低的帽子、遮住的嘴
+        "................",
+        "......kkkk......",
+        ".....kHHHHk.....",
+        "....kHHHHHHk....",
+        "...kHHkkkkHHk...",
+        "...kHkmkkmkHk...",
+        "...kHkxxxxkHk...",
+        "...kHHkkkkHHk...",
+    ],
+})
+BODY_FAT = [
+    "...kCCCCCCCCk...",
+    "..khCCCCCCCChk..",
+    "..khCCyyyyCChk..",
+    "...kCCCCCCCCk...",
+    "....kPPkkPPk....",
+    "....kPPkkPPk....",
+    "....kkk..kkk....",
+    "................",
+]
+BODY_SOCKS = [  # 黑襪
+    "....kCCCCCCk....",
+    "...khCCCCCChk...",
+    "...kHCCyyCCHk...",
+    "....kCCCCCCk....",
+    "....khhkkhhk....",
+    "....kiikkiik....",
+    "....kkk..kkk....",
+    "................",
+]
+BODY_FLAG = [  # 舉著旗子的親衛隊
+    "....kCCCCCCk.ky.",
+    "...khCCCCCChkyy.",
+    "...khCCyyCChkk..",
+    "....kCCCCCCk.k..",
+    "....kPPkkPPk.k..",
+    "....kPPkkPPk.k..",
+    "....kkk..kkk.k..",
+    "................",
+]
+person("huangmao", "elf", {"H": "y", "C": "x", "P": "i"}, BODY_SOCKS)
+person("xingfang", "star", {"H": "n", "C": "=", "P": "U"})
+person("alien_m", "spiky", {"H": "*", "C": "v", "P": "U"})
+person("alien_f", "long", {"H": "*", "C": "v", "P": "v", "y": "*"}, BODY_ROBE)
+person("dueye", "patch", {"H": "y", "C": "L", "P": "U", "d": "d"})
+person("jingkong", "scared", {"H": "i", "C": "W", "P": "U"})
+person("munei", "beanie", {"H": "i", "C": "s", "P": "U", "y": "x"}, BODY_FAT)
+person("anti_teri", "hoodx", {"H": "S", "C": "S", "P": "i", "y": "m"})
+person("teri_guard", "cat", {"H": "o", "C": "y", "P": "U", "n": "R"}, BODY_FLAG)
+
+# 汪醬：用原子筆畫出來的小狗
+save(draw([
+    "................",
+    "................",
+    "................",
+    "...kk......kk...",
+    "..kddk....kddk..",
+    "..kddkkkkkkddk..",
+    "...kkxxxxxxkk...",
+    "...kxkxxxxkxk...",
+    "...kxxxkkxxxk...",
+    "...kxxxmmxxxk...",
+    "....kkxxxxkk....",
+    "...kxxxxxxxxk...",
+    "...kxxxxxxxxkk..",
+    "...kxkxxxxkxkxk.",
+    "...kk.kk.kk.kk..",
+    "................",
+]), "wan")
+# 獅子老大：同一支筆畫的，只是鬃毛變多了
+save(draw([
+    "...k.k.k.k.k....",
+    "..k#k#k#k#k#k...",
+    ".k##oooooo##k...",
+    "k##oxxxxxxo##k..",
+    "k#oxkxxxxkxo#k..",
+    "k#oxxxkkxxxo#k..",
+    "k#oxxkmmkxxo#k..",
+    ".k#oxxxxxxo#k...",
+    "..k##oooo##k....",
+    "...kkxxxxkk.....",
+    "..kxxxxxxxxk....",
+    "..kxxxxxxxxkk...",
+    "..kxxxxxxxxkok..",
+    "..kxkxxxxkxk#k..",
+    "..kk.kk.kk.kk...",
+    "................",
+]), "lion")

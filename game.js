@@ -89,17 +89,19 @@ function healAmount(u, sk) { return Math.round(((sk.base || 0) + uStat(u, 'mag')
 
 /* ================================================================ 條件與文字 */
 function itemCount(id) { return S.inv[id] || 0; }
-function condTerm(t) {
+// st：要檢查的狀態（省略時是目前的遊戲狀態；全自動模式「預演」腳本時會傳入一份複本）
+function condTerm(t, st) {
+  st = st || S;
   t = t.trim();
-  if (t.startsWith('!')) return !condTerm(t.slice(1));
-  if (t.startsWith('flag:')) return !!S.flags[t.slice(5)];
-  if (t.startsWith('item:')) { const [id, n] = t.slice(5).split('>='); return itemCount(id) >= (n ? +n : 1); }
-  if (t.startsWith('karma>=')) return S.karma >= +t.slice(7);
-  if (t.startsWith('gold>=')) return S.gold >= +t.slice(6);
-  if (t.startsWith('party:')) return S.party.some(a => a.id === t.slice(6));
+  if (t.startsWith('!')) return !condTerm(t.slice(1), st);
+  if (t.startsWith('flag:')) return !!st.flags[t.slice(5)];
+  if (t.startsWith('item:')) { const [id, n] = t.slice(5).split('>='); return (st.inv[id] || 0) >= (n ? +n : 1); }
+  if (t.startsWith('karma>=')) return st.karma >= +t.slice(7);
+  if (t.startsWith('gold>=')) return st.gold >= +t.slice(6);
+  if (t.startsWith('party:')) return st.party.some(a => (a.id || a) === t.slice(6));
   return false;
 }
-function cond(c) { return !c || c.split('|').some(alt => alt.split('&').every(condTerm)); }
+function cond(c, st) { return !c || c.split('|').some(alt => alt.split('&').every(t => condTerm(t, st))); }
 // 對話裡的 {item:道具} 換成持有數量，{goal} 換成目前目標
 function fmt(s) { return s.replace(/\{item:(\w+)\}/g, (_, id) => itemCount(id)).replace(/\{goal\}/g, () => S.goal || '……'); }
 
@@ -109,7 +111,7 @@ function freshState() {
     mode: 'title', mapId: 'village', x: 0, y: 0, dir: 'D', party: [], inv: {}, gold: 0, flags: {}, karma: 0,
     quests: {}, goal: '', playTime: 0, busy: false, menus: [], dialog: null, toasts: [], banner: null, bannerId: 0,
     battle: null, ending: null, waitOk: null, dex: {}, visited: {}, card: null, board: null,
-    easy: false, mons: [], invuln: 0,
+    easy: false, mons: [], invuln: 0, auto: false, autoSeen: {}, autoNote: '',
   };
 }
 const curMap = () => D.maps[S.mapId];
@@ -121,6 +123,7 @@ function saveGame() {
   const data = {
     v: 1, mapId: S.mapId, x: S.x, y: S.y, dir: S.dir, gold: S.gold, inv: S.inv, flags: S.flags, karma: S.karma,
     quests: S.quests, goal: S.goal, playTime: S.playTime, dex: S.dex, visited: S.visited, easy: !!S.easy,
+    auto: !!S.auto, autoSeen: S.autoSeen, goalMap: S.goalMap,
     party: S.party.map(a => ({ id: a.id, level: a.level, exp: a.exp, hp: a.hp, mp: a.mp, equip: a.equip })),
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; }
@@ -132,7 +135,8 @@ function loadGame() {
   if (!data) return false;
   S = freshState();
   Object.assign(S, { mapId: data.mapId, x: data.x, y: data.y, dir: data.dir, gold: data.gold, inv: data.inv, flags: data.flags,
-    karma: data.karma, quests: data.quests, goal: data.goal, playTime: data.playTime, mode: 'map', dex: data.dex || {}, visited: data.visited || {}, easy: !!data.easy });
+    karma: data.karma, quests: data.quests, goal: data.goal, playTime: data.playTime, mode: 'map', dex: data.dex || {}, visited: data.visited || {}, easy: !!data.easy,
+    auto: !!data.auto, autoSeen: data.autoSeen || {}, goalMap: data.goalMap });
   S.party = data.party.map(p => Object.assign({ st: {} }, p));
   built = null;
   spawnMons();
@@ -207,6 +211,7 @@ async function exec(c) {
       if (c[3]) return run(c[3]);
       break;
     case 'choice': {
+      S.autoChoice = c.slice(1);
       const i = await choose(c.slice(1).map(o => o[0]));
       return run(c[1 + i][1]);
     }
@@ -220,7 +225,7 @@ async function exec(c) {
     }
     case 'take': removeItem(c[1], c[2] || 1); break;
     case 'gold': S.gold += c[1]; await say('', `得到了 ${c[1]} K 幣！`); break;
-    case 'goal': S.goal = c[1]; toast('目標：' + c[1]); break;
+    case 'goal': S.goal = c[1]; S.goalMap = S.mapId; toast('目標：' + c[1]); break;
     case 'quest': {
       const q = D.quests[c[1]];
       if (S.quests[c[1]] === 'done') break;
@@ -247,6 +252,7 @@ async function exec(c) {
     case 'heal': fullHeal(); break;
     case 'inn': {
       const price = c[1];
+      S.autoChoice = { inn: price };
       const i = await choose([`休息（${price} K 幣）`, '不用了']);
       if (i === 0) {
         if (S.gold < price) await say('', 'K 幣不夠……');
@@ -391,12 +397,17 @@ function tryMove(dir) {
   const now = performance.now();
   if (now - lastMove < 135) return;
   lastMove = now;
+  moveStep(dir);
+}
+// 往一個方向走一格。回傳：true 走過去了、'mon' 撞到怪物、false 被擋住
+function moveStep(dir) {
+  const now = performance.now();
   S.dir = dir;
   const [dx, dy] = STEP[dir];
   const nx = S.x + dx, ny = S.y + dy;
-  if (!walkable(nx, ny) || entAt(nx, ny)) { render(); return; }
+  if (!walkable(nx, ny) || entAt(nx, ny)) { render(); return false; }
   const mon = monAt(nx, ny);
-  if (mon) { render(); if (now >= S.invuln) encounter(mon); return; }
+  if (mon) { render(); if (now >= S.invuln) encounter(mon); return 'mon'; }
   S.x = nx; S.y = ny;
   stepAnim();
   const w = curMap().warps.find(w => w[0] === nx && w[1] === ny);
@@ -405,9 +416,10 @@ function tryMove(dir) {
     saveGame();
     render();
     runBusy([]);
-    return;
+    return true;
   }
   render();
+  return true;
 }
 function interact() {
   const [dx, dy] = STEP[S.dir];
@@ -535,10 +547,14 @@ function menuSettings() {
     build: () => [
       { id: 'speed', label: '戰鬥速度', right: BSPEED_NAMES[bspeed], desc: '按 Enter 切換。設定會記在這台裝置上。' },
       { id: 'easy', label: '難度', right: S.easy ? '簡單' : '普通', desc: '按 Enter 切換，會跟著存檔記錄。簡單：敵人比較弱、受到的傷害較少、經驗值與 K 幣 1.5 倍、「無視」一定成功、怪物比較少也不太追人。' },
+      { id: 'auto', label: '全自動模式', right: S.auto ? '開' : '關', desc: '開啟後由電腦幫你玩：自動走路、找人說話、做主線和支線、戰鬥、買裝備換裝備，一路玩到結局。難度會自動改成「簡單」，戰鬥中倒下會自動復活並補滿 HP／MP。按「選單」可以暫停，點畫面左上角的 AUTO 可以關掉。' },
+      { id: 'aspeed', label: '自動速度', right: AUTO_SPEED_NAMES[autoSpeed], desc: '全自動模式的走路與對話速度。按 Enter 切換。' },
       { id: 'back', label: '返回' },
     ],
     onPick: (i, it) => {
       if (it.id === 'back') { popMenu(); return; }
+      if (it.id === 'auto') { setAuto(!S.auto); if (S.auto) S.menus.length = 0; render(); return; }
+      if (it.id === 'aspeed') { autoSpeed = (autoSpeed + 1) % AUTO_SPEEDS.length; const m = meta(); m.autoSpeed = autoSpeed; saveMeta(m); render(); return; }
       if (it.id === 'easy') { S.easy = !S.easy; toast(S.easy ? '難度改為「簡單」' : '難度改為「普通」'); render(); return; }
       bspeed = (bspeed + 1) % BSPEEDS.length;
       const m = meta(); m.speed = bspeed; saveMeta(m);
@@ -688,6 +704,7 @@ function menuQuests() {
 
 /* ================================================================ 商店 */
 function openShop(shopId) {
+  S.shopId = shopId;
   return new Promise(res => {
     const close = () => { popMenu(); res(); };
     pushMenu({
@@ -795,10 +812,13 @@ async function battle(troopId, opts = {}) {
       if (!alive(act.u)) continue;
       await execAction(act);
       result = checkEnd();
+      if (result === 'lose' && S.auto) { await autoRevive(); result = null; }
       if (result) break;
     }
-    if (!result) { await endOfRound(); result = checkEnd(); }
+    if (!result) { await endOfRound(); result = checkEnd(); if (result === 'lose' && S.auto) result = null; }
+    if (!result && S.auto) await autoRevive();
   }
+  if (S.auto) for (const a of S.party) if (a.hp <= 0) { a.hp = maxHp(a); a.mp = maxMp(a); }
   if (result === 'win') await victory();
   else if (result === 'lose') await msg('全隊倒下了……', 1100);
   for (const a of S.party) { a.st = {}; a.guard = false; }
@@ -843,7 +863,7 @@ async function partyInput() {
     if (a.st.sleep || a.st.confuse) { acts[i] = { type: 'auto', u: a }; i++; continue; }
     B.actor = S.party.indexOf(a);
     render();
-    const r = await commandFor(a, i > 0);
+    const r = S.auto ? await autoCommand(a) : await commandFor(a, i > 0);
     if (r.back) {
       acts[i] = undefined;
       i--;
@@ -1230,8 +1250,9 @@ function toTitle() {
         build: () => [
           { label: '普通', desc: '原本的難度。怪物會追人，魔王不好打。' },
           { label: '簡單', desc: '敵人比較弱、受到的傷害較少、經驗值與 K 幣 1.5 倍、「無視」一定成功、怪物比較少也不太追人。適合想專心看劇情的島民。之後也能在「設定」裡切換。' },
+          { label: '全自動', desc: '電腦幫你從頭玩到結局（簡單難度）。主線、支線、戰鬥、買裝備都會自動進行，你只要看就好。隨時可以在「設定」裡關掉，接手自己玩。' },
         ],
-        onPick: j => newGame(j === 1),
+        onPick: j => { newGame(j >= 1); if (j === 2) setAuto(true); },
       });
       else { loadGame(); render(); toast('串浮上來了。從存檔繼續。'); }
     },
@@ -1249,6 +1270,432 @@ function newGame(easy) {
   teleport(st.map, st.x, st.y, st.dir);
   render();
   runBusy(st.script);
+}
+
+/* ================================================================ 全自動模式
+   開啟後由電腦代替玩家：走路、對話、選擇、戰鬥、買裝備、換裝備，一路玩到結局。
+   怎麼決定下一步：對每個看得到的人「預演」他的對話腳本（在狀態的複本上跑一次，不會真的改到遊戲）。
+   - 會讓劇情前進的（設新旗標、給道具、開／完成任務、開戰、入隊、去沒去過的地方）→ 要去找他（不管在哪張地圖）
+   - 台詞跟上次聽過的不一樣 → 「有新對話」，在同一張地圖裡就順便聊一下
+   - 結局只在什麼都做完之後才去
+   跨地圖的路線用傳送點、船夫這類會載人的 NPC、跳串（快速移動）一起算最短的走法。 */
+const AUTO_SPEEDS = [1, 0.55, 0.3], AUTO_SPEED_NAMES = ['普通', '快', '超快'];
+let autoSpeed = 0, autoNext = 0, autoPlan = null, autoBusy = false, autoTalk = null, autoIntent = null, autoInvKey = '';
+let autoSkip = {}, autoFails = 0, autoLost = 0, autoDlg = null;
+let TOGGLES = new Set();   // 會被 unflag 的旗標（例如外來種的男／女切換），不算劇情前進
+const autoDelay = ms => ms * SPEED * AUTO_SPEEDS[autoSpeed];
+
+function setAuto(on) {
+  if (!S) return;
+  S.auto = !!on;
+  autoPlan = null; autoTalk = null; autoIntent = null; autoSkip = {}; autoFails = 0;
+  S.autoSeen = S.autoSeen || {};
+  if (on) {
+    S.easy = true;   // 全自動一律用簡單難度
+    holdClear();
+    toast('全自動模式開啟（難度：簡單）');
+  } else { S.autoNote = ''; toast('全自動模式關閉，換你自己玩了'); }
+  render();
+}
+function scanToggles() {
+  TOGGLES = new Set();
+  const walk = sc => { for (const c of sc || []) {
+    if (c[0] === 'unflag') TOGGLES.add(c[1]);
+    else if (c[0] === 'if') { walk(c[2]); walk(c[3]); }
+    else if (c[0] === 'choice') c.slice(1).forEach(o => walk(o[1]));
+  } };
+  for (const m of Object.values(D.maps)) { m.ents.forEach(e => walk(e.script)); (m.auto || []).forEach(a => walk(a.script)); }
+  Object.values(D.calls || {}).forEach(walk);
+}
+
+/* ---- 預演：在狀態的複本上把腳本跑一次，看它會做什麼 ---- */
+function simState() { return { flags: { ...S.flags }, inv: { ...S.inv }, karma: S.karma, gold: S.gold, quests: { ...S.quests }, party: S.party.map(a => a.id) }; }
+function simClone(st) { return { flags: { ...st.flags }, inv: { ...st.inv }, karma: st.karma, gold: st.gold, quests: { ...st.quests }, party: st.party.slice() }; }
+function newAcc() { return { prod: 0, karma: 0, sig: '', who: '', shops: [], warp: null, ending: null, battle: null }; }
+function simRun(script, st, acc, depth = 0) {
+  if (depth > 30) return;
+  for (const c of script || []) if (simExec(c, st, acc, depth) === STOP) return STOP;
+}
+function simExec(c, st, acc, depth) {
+  switch (c[0]) {
+    case 'say': acc.sig += c[1] + '|' + c.slice(2).join('/') + ';'; if (!acc.who && c[1] && c[1] !== '無名氏') acc.who = c[1]; break;
+    case 'if': return cond(c[1], st) ? simRun(c[2], st, acc, depth + 1) : simRun(c[3], st, acc, depth + 1);
+    case 'choice': { const i = autoPick(c.slice(1), st); acc.sig += '?' + i; return simRun(c[1 + i][1], st, acc, depth + 1); }
+    case 'flag': if (!st.flags[c[1]]) { st.flags[c[1]] = true; if (!TOGGLES.has(c[1])) acc.prod++; } break;
+    case 'unflag': delete st.flags[c[1]]; break;
+    case 'give': st.inv[c[1]] = (st.inv[c[1]] || 0) + (c[2] || 1); acc.prod++; break;
+    case 'take': if (st.inv[c[1]]) { st.inv[c[1]] = Math.max(0, st.inv[c[1]] - (c[2] || 1)); acc.prod++; } break;
+    case 'gold': st.gold += c[1]; acc.prod++; break;
+    case 'quest': if (st.quests[c[1]] !== 'done' && st.quests[c[1]] !== c[2]) { st.quests[c[1]] = c[2]; acc.prod++; } break;
+    case 'karma': st.karma += c[1]; acc.karma += c[1]; break;
+    case 'battle': acc.battle = c[1]; acc.prod++; break;
+    case 'join': if (!st.party.includes(c[1])) { st.party.push(c[1]); acc.prod++; } break;
+    case 'warp': acc.warp = c[1]; if (!S.visited[c[1]]) acc.prod++; break;
+    case 'ending': acc.ending = c[1]; acc.prod++; return STOP;
+    case 'call': return simRun(D.calls[c[1]], st, acc, depth + 1);
+    case 'shop': acc.shops.push(c[1]); break;
+    case 'board': acc.sig += 'B' + c[1] + ':' + boardPosts(c[1]).length + ';'; break;
+  }
+}
+// 選項怎麼選：善行（karma）最優先，再來是會讓劇情前進的；不逛照燒攤、不坐船回頭（除非正要去那裡）
+function autoPick(opts, st) {
+  let best = 0, bestScore = -Infinity;
+  opts.forEach(([, branch], i) => {
+    const a = newAcc();
+    simRun(branch, simClone(st), a, 1);
+    let sc = a.karma * 10 + a.prod;
+    if (a.shops.length) sc -= 0.5;
+    if (a.warp) sc += autoIntent === a.warp ? 100 : S.visited[a.warp] ? -50 : 0;
+    if (a.ending === 'real') sc -= 1;
+    if (sc > bestScore) { bestScore = sc; best = i; }
+  });
+  return best;
+}
+function entInfo(mapId, e) {
+  if (e.chest) { const a = newAcc(); a.prod = S.flags[`chest:${mapId}:${e.id}`] ? 0 : 1; a.who = '寶箱'; return a; }
+  const a = newAcc();
+  simRun(e.script, simState(), a);
+  return a;
+}
+// 會載人去別的地方的 NPC（船夫）：腳本裡只有對話和傳送，沒有戰鬥或其他事件
+function ferryOf(e) {
+  let found = null, bad = false;
+  const walk = sc => { for (const c of sc || []) {
+    if (bad) return;
+    if (c[0] === 'warp') { found = found || c; }
+    else if (c[0] === 'if') walk(cond(c[1]) ? c[2] : c[3]);
+    else if (c[0] === 'choice') c.slice(1).forEach(o => walk(o[1]));
+    else if (['battle', 'ending', 'join', 'give', 'flag', 'quest'].includes(c[0])) bad = true;
+  } };
+  walk(e.script);
+  return bad ? null : found;
+}
+
+/* ---- 裝備：依角色是物理型還是魔法型，替每件裝備打分數 ---- */
+function isCaster(a) { const d = ad(a); return d.growth.mag > d.growth.atk; }
+function equipScore(a, id) {
+  if (!id) return 0;
+  const it = D.items[id], st = it.stats || {}, c = isCaster(a);
+  const w = { atk: c ? 0.4 : 2, mag: c ? 2 : 0.3, def: 1.2, spd: 0.8, hp: 0.25, mp: c ? 0.3 : 0.1 };
+  let s = 0;
+  for (const k in st) s += (w[k] || 0) * st[k];
+  return s + (it.immune || []).length * 6;
+}
+function autoEquipAll() {
+  for (const slot of ['weapon', 'armor', 'acc']) for (const a of S.party) {
+    const cur = a.equip[slot];
+    let best = cur, bs = equipScore(a, cur);
+    for (const id of invList((it, iid) => slotOf(iid) === slot && canEquip(a, iid))) { const sc = equipScore(a, id); if (sc > bs + 0.01) { bs = sc; best = id; } }
+    if (best && best !== cur) {
+      removeItem(best);
+      if (cur) addItem(cur);
+      a.equip[slot] = best;
+      a.hp = Math.min(a.hp, maxHp(a)); a.mp = Math.min(a.mp, maxMp(a));
+      toast(`${ad(a).name}換上了【${D.items[best].name}】`);
+    }
+  }
+}
+// 這間店有沒有買得起、又比現在好的裝備？回傳要買的清單（每個人每個欄位最多一件）
+function shopBuys(shopId) {
+  const list = (D.shops[shopId] || []).filter(id => slotOf(id));
+  if (!list.length) return [];
+  const pool = { ...S.inv }, buys = [];
+  let g = S.gold;
+  for (const slot of ['weapon', 'armor', 'acc']) for (const a of S.party) {
+    let have = a.equip[slot], hs = equipScore(a, have);
+    for (const id of Object.keys(pool)) if (pool[id] > 0 && slotOf(id) === slot && canEquip(a, id) && equipScore(a, id) > hs) { have = id; hs = equipScore(a, id); }
+    if (have && have !== a.equip[slot]) pool[have]--;   // 背包裡的備品先留給這個人
+    let best = null, bs = hs;
+    for (const id of list) {
+      if (slotOf(id) !== slot || !canEquip(a, id) || D.items[id].price > g) continue;
+      const sc = equipScore(a, id);
+      if (sc > bs + 0.01) { bs = sc; best = id; }
+    }
+    if (best) { buys.push(best); g -= D.items[best].price; }
+  }
+  return buys;
+}
+
+/* ---- 路線：地圖內用 BFS，跨地圖把傳送點、船夫、跳串當成邊，用最短路徑 ---- */
+function walkM(m, x, y) { return y >= 0 && y < m.rows.length && x >= 0 && x < m.rows[0].length && D.tiles[m.rows[y][x]][1] === 1; }
+function bfsMap(mapId, sx, sy) {
+  const m = D.maps[mapId], W = m.rows[0].length, H = m.rows.length;
+  const block = new Set(m.ents.filter(e => cond(e.show)).map(e => e.y * W + e.x));
+  const warps = new Set(m.warps.map(w => w[1] * W + w[0]));
+  const dist = new Int32Array(W * H).fill(-1), prev = new Int32Array(W * H).fill(-1);
+  const q = [sy * W + sx];
+  dist[q[0]] = 0;
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h], x = c % W, y = (c - x) / W;
+    if (h > 0 && warps.has(c)) continue;   // 踩上傳送點就會被傳走，不能再往前
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const nx = x + dx, ny = y + dy, n = ny * W + nx;
+      if (!walkM(m, nx, ny) || block.has(n) || dist[n] >= 0) continue;
+      dist[n] = dist[c] + 1; prev[n] = c; q.push(n);
+    }
+  }
+  return {
+    W, dist: (x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? -1 : dist[y * W + x],
+    path(x, y) {   // 回傳方向字串陣列
+      const out = [];
+      let c = y * W + x;
+      while (prev[c] >= 0) { const p = prev[c], d = c - p; out.push(d === 1 ? 'R' : d === -1 ? 'L' : d === W ? 'D' : 'U'); c = p; }
+      return out.reverse();
+    },
+  };
+}
+// 站在哪裡可以跟 (ex, ey) 的人說話：正前方，或隔著櫃台
+function standFor(bfs, mapId, e) {
+  const m = D.maps[mapId];
+  let best = null;
+  for (const [dir, [dx, dy]] of Object.entries(STEP)) {
+    const cands = [[e.x - dx, e.y - dy]];
+    if ((m.rows[e.y - dy] || '')[e.x - dx] === 'u') cands.push([e.x - 2 * dx, e.y - 2 * dy]);
+    for (const [x, y] of cands) {
+      const d = bfs.dist(x, y);
+      if (d < 0 || m.warps.some(w => w[0] === x && w[1] === y)) continue;
+      if (!best || d < best.d) best = { d, x, y, dir };
+    }
+  }
+  if (best) best.path = bfs.path(best.x, best.y);
+  return best;
+}
+// 目前目標提到的地圖（加上設定目標時所在的地圖）：主線要往那裡走
+function goalMaps() {
+  const g = S.goal || '', set = new Set(S.goalMap ? [S.goalMap] : []);
+  for (const [mid, m] of Object.entries(D.maps)) {
+    const base = m.name.split(' ')[0].replace(/(外圍|內部)$/, '');
+    if (g.includes(m.name) || g.includes(base)) set.add(mid);
+  }
+  return set;
+}
+/* 目標的優先順序（數字小的先做）：
+   0 這張地圖上的事（聊天、開寶箱、買裝備、任務）   1 主線：目前目標提到的地圖、或頭上有「！」的人
+   2 其他地圖的支線與寶箱   3 不在目前目標裡的魔王戰（免得跳過劇情先打掉）   4 結局 */
+function autoTargets() {
+  const out = [], gm = goalMaps();
+  for (const [mid, m] of Object.entries(D.maps)) {
+    for (const e of m.ents) {
+      if (!cond(e.show)) continue;
+      const key = mid + ':' + e.id;
+      if (autoSkip[key] === autoStateKey()) continue;
+      const a = entInfo(mid, e);
+      const here = mid === S.mapId, main = gm.has(mid) || (e.mark && cond(e.mark));
+      const boss = a.battle && D.troops[a.battle].some(id => D.enemies[id].boss);
+      if (a.prod > 0) out.push({ map: mid, ent: e, key, prio: a.ending ? 4 : boss && !main ? 3 : here ? 0 : main ? 1 : 2, label: a.who });
+      else if (here && a.sig && S.autoSeen[key] !== a.sig) out.push({ map: mid, ent: e, key, prio: 0, label: a.who });
+      else if (here && a.shops.some(id => shopBuys(id).length)) out.push({ map: mid, ent: e, key, prio: 0, label: a.who + '（買裝備）', shop: true });
+    }
+    if (mid !== S.mapId) for (const au of m.auto || []) {
+      if (!cond(au.cond)) continue;
+      const a = newAcc();
+      simRun(au.script, simState(), a);
+      if (a.prod > 0) { out.push({ map: mid, ent: null, key: mid + ':auto', prio: gm.has(mid) ? 1 : 2, label: m.name }); break; }
+    }
+  }
+  return out;
+}
+function autoStateKey() {
+  return [S.mapId, Object.keys(S.flags).length, JSON.stringify(S.inv), JSON.stringify(S.quests), S.party.length, Object.keys(S.autoSeen).length, S.gold >> 6].join('|');
+}
+function autoComputePlan() {
+  const targets = autoTargets();
+  if (!targets.length) return null;
+  const seen = new Set(), pq = [{ map: S.mapId, x: S.x, y: S.y, cost: 0, legs: [] }];
+  let best = null;
+  const better = (c) => !best || c.prio < best.prio || (c.prio === best.prio && c.cost < best.cost);
+  for (let n = 0; pq.length && n < 120; n++) {
+    pq.sort((a, b) => a.cost - b.cost);
+    const node = pq.shift(), nk = node.map + ':' + node.x + ':' + node.y;
+    if (seen.has(nk)) continue;
+    seen.add(nk);
+    if (best && node.cost > best.cost && best.prio === 0) break;
+    const bfs = bfsMap(node.map, node.x, node.y);
+    for (const t of targets) if (t.map === node.map) {
+      if (!t.ent) { if (node.legs.length && better({ prio: t.prio, cost: node.cost })) best = { ...t, cost: node.cost, legs: node.legs }; continue; }
+      const st = standFor(bfs, node.map, t.ent);
+      if (!st) continue;
+      const cost = node.cost + st.d;
+      if (better({ prio: t.prio, cost })) best = { ...t, cost, legs: node.legs.concat([{ map: node.map, path: st.path, act: 'talk', dir: st.dir, ent: t.ent.id, key: t.key }]) };
+    }
+    const m = D.maps[node.map];
+    for (const w of m.warps) {
+      const d = bfs.dist(w[0], w[1]);
+      if (d > 0) pq.push({ map: w[2], x: w[3], y: w[4], cost: node.cost + d + 2, legs: node.legs.concat([{ map: node.map, path: bfs.path(w[0], w[1]), act: 'walk' }]) });
+    }
+    for (const e of m.ents) {
+      if (!cond(e.show)) continue;
+      const f = ferryOf(e);
+      if (!f || f[1] === node.map) continue;
+      const st = standFor(bfs, node.map, e);
+      if (st) pq.push({ map: f[1], x: f[2], y: f[3], cost: node.cost + st.d + 6, legs: node.legs.concat([{ map: node.map, path: st.path, act: 'ferry', dir: st.dir, ent: e.id, to: f[1] }]) });
+    }
+    if (!node.legs.length && !(D.noTravel || []).includes(node.map)) {
+      for (const tp of D.travel || []) if (tp.map !== node.map && S.visited[tp.map] && cond(tp.cond)) pq.push({ map: tp.map, x: tp.x, y: tp.y, cost: 40, legs: [{ map: node.map, path: [], act: 'travel', tp }] });
+    }
+  }
+  if (!best) return null;
+  return { legs: best.legs.map(l => ({ ...l, path: l.path.slice() })), label: best.ent ? `${D.maps[best.map].name}：${best.label || '看看'}` : `前往${D.maps[best.map].name}`, key: autoStateKey(), tkey: best.key };
+}
+
+/* ---- 戰鬥：補血、復活、打弱點、能一次打全部就打全部 ---- */
+function estHit(u, t, sk) {
+  const raw = sk.kind === 'mag' ? Math.max(1, uStat(u, 'mag') * (sk.power || 1) + (sk.base || 0) - uStat(t, 'def') * 0.25)
+    : Math.max(1, uStat(u, 'atk') * (sk.power || 1) - uStat(t, 'def') * 0.5);
+  const elem = sk.elem || 'phys';
+  return raw * elemMult(t, elem) * (t.st.hidden && elem !== 'holy' ? 0.25 : 1) * (t.st.counter && sk.kind === 'phys' ? 0.4 : 1);
+}
+async function autoCommand(a) {
+  const B = S.battle;
+  await bwait(150);
+  const foes = aliveEnemies(), allies = aliveParty(), dead = S.party.filter(x => x.hp <= 0);
+  if (B.gauge >= 100 && !B.comboQueued) {
+    B.comboQueued = true;
+    const hurt = allies.filter(x => x.hp < maxHp(x) * 0.45).length + dead.length;
+    return { type: 'combo', u: a, combo: hurt >= 2 ? 'pushall' : 'godthread' };
+  }
+  const sks = a.st.silence ? [] : skillsOf(a).map(id => [id, D.skills[id]]).filter(([, sk]) => a.mp >= sk.mp);
+  const rev = sks.find(([, sk]) => sk.kind === 'revive' || (sk.revive && sk.kind === 'heal'));
+  if (dead.length && rev) return { type: 'skill', u: a, sk: rev[0], t: dead[0] };
+  const hurt = allies.filter(x => x.hp < maxHp(x) * 0.5).sort((x, y) => x.hp / maxHp(x) - y.hp / maxHp(y));
+  if (hurt.length) {
+    const heals = sks.filter(([, sk]) => sk.kind === 'heal' && !sk.revive);
+    const group = heals.filter(([, sk]) => sk.target === 'allies').sort((x, y) => y[1].base - x[1].base);
+    const single = heals.filter(([, sk]) => sk.target === 'ally');
+    if (hurt.length >= 2 && group.length) return { type: 'skill', u: a, sk: group[0][0] };
+    if (single.length) return { type: 'skill', u: a, sk: single[0][0], t: hurt[0] };
+    if (group.length) return { type: 'skill', u: a, sk: group[0][0] };
+  }
+  const bad = allies.filter(x => x.st.silence || x.st.confuse || x.st.sleep).length;
+  const cure = sks.find(([, sk]) => sk.kind === 'cure');
+  if (bad >= 2 && cure) return { type: 'skill', u: a, sk: cure[0] };
+  const target = foes.slice().sort((x, y) => x.hp - y.hp)[0];
+  let best = { type: 'attack', u: a, t: target }, bestVal = estHit(a, target, { kind: 'phys', power: 1 });
+  for (const [id, sk] of sks) {
+    if (!['phys', 'mag'].includes(sk.kind) || sk.mp <= 0) continue;
+    let val;
+    if (sk.target === 'enemies') val = foes.reduce((s, t) => s + estHit(a, t, sk), 0);
+    else if (sk.target === 'random3') val = estHit(a, target, sk) * 3;
+    else if (sk.target === 'enemy') {
+      // 單體技能：挑這招打起來最痛的那一隻（打弱點）
+      let bt = target, bv = estHit(a, target, sk);
+      for (const t of foes) { const v = estHit(a, t, sk) * (t.hp <= bv ? 1.2 : 1); if (v > bv) { bv = v; bt = t; } }
+      val = bv;
+      if (val > bestVal * 1.2) { bestVal = val; best = { type: 'skill', u: a, sk: id, t: bt }; }
+      continue;
+    } else continue;
+    if (val > bestVal * 1.2) { bestVal = val; best = { type: 'skill', u: a, sk: id, t: null }; }
+  }
+  return best;
+}
+async function autoRevive() {
+  for (const a of S.party) if (a.hp <= 0) {
+    a.hp = maxHp(a); a.mp = maxMp(a); a.st = {};
+    popup(a, 'AUTO', 'heal');
+    await msg(`（全自動）${ad(a).name}被推回來了！HP 與 MP 全滿！`, 500);
+  }
+}
+
+/* ---- 每 40 毫秒看一次現在該做什麼 ---- */
+function autoTick() {
+  if (!S || !D || !S.auto || autoBusy) return;
+  const now = performance.now();
+  if (now < autoNext) return;
+  const later = ms => { autoNext = now + autoDelay(ms); };
+  const top = S.menus[S.menus.length - 1];
+  if (S.menus.length && S.menus[0].cls === 'main') return;   // 玩家自己打開了選單：暫停
+  if (S.mode === 'ending') {
+    if (S.dialog && !S.menus.length) {
+      if (autoDlg !== S.dialog) { autoDlg = S.dialog; later(900 + S.dialog.text.length * 130); }
+      else { autoDlg = null; advanceDialog(); later(40); }
+    }
+    else if (S.ending && S.ending.card && !S.autoDone) { S.autoDone = true; S.autoNote = '全破！'; toast('全自動模式：全破了！'); }
+    return;
+  }
+  if (S.mode === 'gameover') { if (top) { top.onPick(hasSave() ? 0 : 1); later(800); } return; }
+  if (S.mode === 'title') return;
+  if (S.card) { S.card.res(); later(300); return; }
+  if (S.board) { closeBoard(); later(300); return; }
+  if (S.waitOk) { const r = S.waitOk; S.waitOk = null; r(); later(250); return; }
+  if (top && /battle/.test(top.cls || '')) {   // 剛打開全自動時還停在戰鬥選單：交給「自動」
+    const items = menuItems(top), i = items.findIndex(it => it.cmd === 'auto');
+    if (i >= 0) top.onPick(i, items[i]); else if (top.onBack) top.onBack(); else popMenu();
+    later(200); return;
+  }
+  if (top && top.cls === 'choice') {
+    const ac = S.autoChoice;
+    let i = 0;
+    if (Array.isArray(ac)) i = autoPick(ac, simState());
+    else if (ac && ac.inn) i = (S.gold >= ac.inn && S.party.some(a => a.hp < maxHp(a) || a.mp < maxMp(a))) ? 0 : 1;
+    S.autoChoice = null;
+    top.cursor = i; render();
+    autoBusy = true;
+    setTimeout(() => { autoBusy = false; if (S.menus[S.menus.length - 1] === top) top.onPick(i, menuItems(top)[i]); }, autoDelay(450));
+    later(500); return;
+  }
+  if (top && /shop/.test(top.cls || '')) {
+    if (top.title === '商店') {
+      for (const id of shopBuys(S.shopId)) { S.gold -= D.items[id].price; addItem(id); toast(`買了【${D.items[id].name}】`); }
+      autoEquipAll();
+      top.onBack ? top.onBack() : popMenu();
+    } else popMenu();
+    later(500); return;
+  }
+  if (S.dialog && !S.menus.length) {   // 每句話停留一段「讀得完」的時間再翻頁
+    if (autoDlg !== S.dialog) { autoDlg = S.dialog; later(500 + S.dialog.text.length * 110); return; }
+    autoDlg = null; advanceDialog(); later(40); return;
+  }
+  if (S.mode !== 'map' || S.busy || S.menus.length || S.dialog) return;
+
+  // ---- 地圖上、可以自由行動 ----
+  if (autoTalk) {   // 剛剛跟誰說完話：把現在聽得到的台詞記成「聽過了」
+    const m = D.maps[autoTalk.map], e = m && m.ents.find(x => x.id === autoTalk.ent);
+    if (e) S.autoSeen[autoTalk.key] = entInfo(autoTalk.map, e).sig;
+    if (autoStateKey() === autoTalk.before) autoSkip[autoTalk.key] = autoStateKey();   // 說了也沒變化：先跳過
+    autoTalk = null; autoIntent = null; autoPlan = null;
+  }
+  const ik = JSON.stringify(S.inv) + S.party.length;
+  if (ik !== autoInvKey) { autoInvKey = ik; autoEquipAll(); }
+  if (!autoPlan || autoPlan.key !== autoStateKey() || !autoPlan.legs.length || autoPlan.legs[0].map !== S.mapId) {
+    autoPlan = autoComputePlan();
+    if (!autoPlan) {
+      autoLost++;
+      S.autoNote = '（四處看看……）';
+      const dirs = Object.keys(STEP).filter(d => { const [dx, dy] = STEP[d]; return walkable(S.x + dx, S.y + dy) && !entAt(S.x + dx, S.y + dy) && !warpAt(S.x + dx, S.y + dy); });
+      if (dirs.length) moveStep(dirs[rnd(dirs.length)]);
+      later(400); return;
+    }
+    autoLost = 0;
+    S.autoNote = autoPlan.label;
+  }
+  const leg = autoPlan.legs[0];
+  if (leg.path.length) {
+    const fx = S.x, fy = S.y, r = moveStep(leg.path[0]);
+    if (r === true && (S.x !== fx || S.y !== fy || S.mapId !== leg.map)) { leg.path.shift(); autoFails = 0; if (S.mapId !== leg.map) autoPlan.legs.shift(); }
+    else if (r !== 'mon' && ++autoFails > 3) { autoSkip[autoPlan.tkey] = autoStateKey(); autoPlan = null; autoFails = 0; }
+    later(150); return;
+  }
+  if (leg.act === 'travel') {
+    toast('跳串：' + leg.tp.name);
+    teleport(leg.tp.map, leg.tp.x, leg.tp.y, leg.tp.dir); built = null; saveGame(); render(); runBusy([]);
+    autoPlan = null; later(500); return;
+  }
+  if (leg.act === 'talk' || leg.act === 'ferry') {
+    S.dir = leg.dir; render();
+    const [dx, dy] = STEP[leg.dir];
+    let fx = S.x + dx, fy = S.y + dy;
+    if (tileAt(fx, fy) === 'u') { fx += dx; fy += dy; }
+    const e = entAt(fx, fy);
+    if (!e || e.id !== leg.ent) { autoSkip[autoPlan.tkey] = autoStateKey(); autoPlan = null; later(200); return; }
+    autoTalk = { map: S.mapId, ent: e.id, key: S.mapId + ':' + e.id, before: autoStateKey() };
+    if (leg.act === 'ferry') autoIntent = leg.to;
+    autoPlan.legs.shift();
+    autoBusy = true;
+    setTimeout(() => { autoBusy = false; interact(); }, autoDelay(250));
+    later(400); return;
+  }
+  autoPlan.legs.shift();
+  later(100);
 }
 
 /* ================================================================ 繪製 */
@@ -1413,10 +1860,22 @@ function renderOverlays() {
   }
   if (S.dialog) {
     const d = S.dialog;
-    h += `<div class="dialog ${d.speaker ? '' : 'nar'}">${d.speaker ? `<div class="spk">${esc(d.speaker)}</div>` : ''}<div class="dt">${esc(d.text)}</div>${ms.length ? '' : '<div class="nx">▼</div>'}</div>`;
+    const hand = !!d.speaker && (D.hand || []).includes(d.speaker);
+    h += `<div class="dialog ${d.speaker ? '' : 'nar'} ${hand ? 'hand' : ''}">${d.speaker ? `<div class="spk">${esc(d.speaker)}</div>` : ''}<div class="dt">${hand ? handText(d.text) : esc(d.text)}</div>${ms.length ? '' : '<div class="nx">▼</div>'}</div>`;
   }
+  if (S.auto && (S.mode === 'map' || S.mode === 'battle')) h += `<div class="autob" data-autooff title="點一下關閉全自動模式"><b>AUTO</b>${S.autoNote ? `<span>${esc(S.autoNote)}</span>` : ''}</div>`;
   if (S.toasts.length) h += `<div class="toasts">${S.toasts.map(t => `<div>${esc(t.text)}</div>`).join('')}</div>`;
   return h;
+}
+/* 手寫字：每個字隨機歪一點、大小不一（同一句話每次都歪得一樣） */
+function handText(text) {
+  let h = 2166136261;
+  for (const ch of text) { h ^= ch.codePointAt(0); h = Math.imul(h, 16777619); }
+  return [...text].map((ch, i) => {
+    const r = Math.imul(h ^ (i * 2654435761), 2246822519) >>> 0;
+    const rot = (r % 21) - 10, dy = ((r >>> 5) % 9) - 4, sc = 0.8 + ((r >>> 9) % 8) * 0.05;
+    return `<span style="transform:translateY(${dy}px) rotate(${rot}deg) scale(${sc.toFixed(2)})">${esc(ch)}</span>`;
+  }).join('');
 }
 function partySummary() {
   const t = S.playTime;
@@ -1444,6 +1903,7 @@ function press(btn, repeat) {
     return;
   }
   if (S.mode !== 'map' || S.busy) return;
+  if (S.auto) { if (btn === 'back' || btn === 'menu') openMainMenu(); return; }
   if (DIRK[btn]) tryMove(DIRK[btn]);
   else if (btn === 'ok') interact();
   else if (btn === 'back' || btn === 'menu') openMainMenu();
@@ -1494,6 +1954,8 @@ async function boot() {
   const res = await fetch('data/game.json');
   D = await res.json();
   bspeed = meta().speed || 0;
+  autoSpeed = meta().autoSpeed || 0;
+  scanToggles();
   S = freshState();
   // 先載入主角的所有方向與走路圖，換圖時才不會閃一下
   for (const n of new Set(Object.values(HERO_FRAMES).flat())) new Image().src = `img/${n}.png`;
@@ -1528,6 +1990,7 @@ async function boot() {
     btn.addEventListener('contextmenu', e => e.preventDefault());
   });
   el('ov').addEventListener('click', e => {
+    if (e.target.closest('[data-autooff]')) { setAuto(false); return; }
     const li = e.target.closest('li[data-i]');
     if (li && S.menus.length) {
       const m = S.menus[S.menus.length - 1];
@@ -1542,6 +2005,7 @@ async function boot() {
   });
   setInterval(() => { if (S && (S.mode === 'map' || S.mode === 'battle') && !document.hidden) S.playTime++; }, 1000);
   setInterval(monTick, 100);
+  setInterval(autoTick, 40);
   window.KDBG = {
     get S() { return S; }, get D() { return D; },
     warp: (m, x, y) => { S.menus.length = 0; S.dialog = null; teleport(m, x, y, 'D'); S.pendingAuto = false; built = null; render(); },
@@ -1555,6 +2019,8 @@ async function boot() {
     speed: x => { SPEED = x; },
     god: on => { GOD = !!on; },
     mons: on => { MONS_ON = !!on; if (!on) { S.mons = []; render(); } },
+    auto: on => setAuto(!!on),
+    autoTargets: () => autoTargets().map(t => `${t.map}:${t.ent ? t.ent.id : '(進入)'}:${t.prio}:${t.label}`),
   };
 }
 

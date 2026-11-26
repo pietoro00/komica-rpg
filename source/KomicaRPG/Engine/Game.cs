@@ -90,6 +90,7 @@ public partial class Game
     {
         var meta = await LoadMeta();
         bspeed = Math.Clamp(meta.Speed, 0, BSpeeds.Length - 1);
+        autoSpeed = Math.Clamp(meta.AutoSpeed, 0, AutoSpeeds.Length - 1);
     }
 
     void ResetState()
@@ -100,6 +101,7 @@ public partial class Game
         Battle = null; Ending = null; waitOk = null; pendingAuto = false;
         Easy = false; Mons = new(); invuln = 0;
         Dex = new(); Visited = new(); Card = null; Board = null; Popups.Clear();
+        ResetAuto();
     }
 
     public MapDef CurMap => D.Maps[MapId];
@@ -204,23 +206,24 @@ public partial class Game
     // ================================================================ 條件與文字
     public int ItemCount(string id) => Inv.GetValueOrDefault(id);
 
-    bool CondTerm(string t)
+    // st：要檢查的狀態（null 是目前的遊戲狀態；全自動模式「預演」腳本時會傳入一份複本）
+    bool CondTerm(string t, SimState? st)
     {
         t = t.Trim();
-        if (t.StartsWith("!")) return !CondTerm(t[1..]);
-        if (t.StartsWith("flag:")) return Flags.GetValueOrDefault(t[5..]);
+        if (t.StartsWith("!")) return !CondTerm(t[1..], st);
+        if (t.StartsWith("flag:")) return (st?.Flags ?? Flags).GetValueOrDefault(t[5..]);
         if (t.StartsWith("item:"))
         {
             var parts = t[5..].Split(">=");
-            return ItemCount(parts[0]) >= (parts.Length > 1 ? int.Parse(parts[1]) : 1);
+            return (st?.Inv ?? Inv).GetValueOrDefault(parts[0]) >= (parts.Length > 1 ? int.Parse(parts[1]) : 1);
         }
-        if (t.StartsWith("karma>=")) return Karma >= int.Parse(t[7..]);
-        if (t.StartsWith("gold>=")) return Gold >= int.Parse(t[6..]);
-        if (t.StartsWith("party:")) return Party.Any(a => a.Id == t[6..]);
+        if (t.StartsWith("karma>=")) return (st?.Karma ?? Karma) >= int.Parse(t[7..]);
+        if (t.StartsWith("gold>=")) return (st?.Gold ?? Gold) >= int.Parse(t[6..]);
+        if (t.StartsWith("party:")) return st != null ? st.Party.Contains(t[6..]) : Party.Any(a => a.Id == t[6..]);
         return false;
     }
 
-    public bool Cond(string? c) => string.IsNullOrEmpty(c) || c.Split('|').Any(alt => alt.Split('&').All(CondTerm));
+    public bool Cond(string? c, SimState? st = null) => string.IsNullOrEmpty(c) || c.Split('|').Any(alt => alt.Split('&').All(t => CondTerm(t, st)));
     // 對話裡的 {item:道具} 換成持有數量，{goal} 換成目前目標
     string Fmt(string s) => Regex.Replace(s, @"\{item:(\w+)\}", m => ItemCount(m.Groups[1].Value).ToString())
         .Replace("{goal}", string.IsNullOrEmpty(Goal) ? "……" : Goal);
@@ -249,6 +252,7 @@ public partial class Game
         {
             MapId = MapId, X = X, Y = Y, Dir = Dir, Gold = Gold, Inv = new(Inv), Flags = new(Flags), Karma = Karma,
             Quests = new(Quests), Goal = Goal, PlayTime = PlayTime, Dex = new(Dex), Visited = new(Visited), Easy = Easy,
+            Auto = Auto, AutoSeen = new(AutoSeen), GoalMap = goalMap,
             Party = Party.Select(a => new SaveActor { Id = a.Id, Level = a.Level, Exp = a.Exp, Hp = a.Hp, Mp = a.Mp, Equip = new(a.Equip) }).ToList(),
         };
         try
@@ -282,6 +286,7 @@ public partial class Game
         MapId = data.MapId; X = data.X; Y = data.Y; Dir = data.Dir; Gold = data.Gold; Inv = data.Inv; Flags = data.Flags;
         Karma = data.Karma; Quests = data.Quests; Goal = data.Goal; PlayTime = data.PlayTime;
         Dex = data.Dex ?? new(); Visited = data.Visited ?? new(); Easy = data.Easy;
+        Auto = data.Auto; AutoSeen = data.AutoSeen ?? new(); goalMap = data.GoalMap;
         Party = data.Party.Select(p => new Actor { Id = p.Id, Level = p.Level, Exp = p.Exp, Hp = p.Hp, Mp = p.Mp, Equip = p.Equip }).ToList();
         Mode = "map";
         SpawnMons();
@@ -439,6 +444,7 @@ public partial class Game
             {
                 var opts = new List<JsonElement>();
                 for (var i = 1; i < c.GetArrayLength(); i++) opts.Add(c[i]);
+                autoChoice = opts;
                 var pick = await Choose(opts.Select(o => o[0].GetString() ?? "").ToList());
                 return await Run(opts[pick][1]);
             }
@@ -460,7 +466,7 @@ public partial class Game
                 await Say("", $"得到了 {n} K 幣！");
                 break;
             }
-            case "goal": Goal = Str(c, 1); ShowToast("目標：" + Goal); break;
+            case "goal": Goal = Str(c, 1); goalMap = MapId; ShowToast("目標：" + Goal); break;
             case "quest":
             {
                 var id = Str(c, 1);
@@ -496,6 +502,7 @@ public partial class Game
             case "inn":
             {
                 var price = Int(c, 1, 0);
+                autoChoice = price;
                 var i = await Choose(new List<string> { $"休息（{price} K 幣）", "不用了" });
                 if (i == 0)
                 {
@@ -725,16 +732,23 @@ public partial class Game
         var now = clock.ElapsedMilliseconds;
         if (now - lastMove < 135) return;
         lastMove = now;
+        MoveStep(dir);
+    }
+
+    /// <summary>往一個方向走一格。回傳 1＝走過去了、2＝撞到怪物、0＝被擋住。</summary>
+    int MoveStep(string dir)
+    {
+        var now = clock.ElapsedMilliseconds;
         Dir = dir;
         var (dx, dy) = Step(dir);
         int nx = X + dx, ny = Y + dy;
-        if (!Walkable(nx, ny) || EntAt(nx, ny) != null) { Render(); return; }
+        if (!Walkable(nx, ny) || EntAt(nx, ny) != null) { Render(); return 0; }
         var mon = MonAt(nx, ny);
         if (mon != null)
         {
             Render();
             if (now >= invuln) Encounter(mon);
-            return;
+            return 2;
         }
         X = nx; Y = ny;
         StepAnim();
@@ -745,9 +759,10 @@ public partial class Game
             _ = SaveGame();
             Render();
             _ = RunBusy(null);
-            return;
+            return 1;
         }
         Render();
+        return 1;
     }
 
     void Interact()
@@ -796,8 +811,9 @@ public partial class Game
                         {
                             new() { Label = "普通", Desc = "原本的難度。怪物會追人，魔王不好打。" },
                             new() { Label = "簡單", Desc = "敵人比較弱、受到的傷害較少、經驗值與 K 幣 1.5 倍、「無視」一定成功、怪物比較少也不太追人。適合想專心看劇情的島民。之後也能在「設定」裡切換。" },
+                            new() { Label = "全自動", Desc = "電腦幫你從頭玩到結局（簡單難度）。主線、支線、戰鬥、買裝備都會自動進行，你只要看就好。隨時可以在「設定」裡關掉，接手自己玩。" },
                         },
-                        OnPick = (j, picked) => NewGame(j == 1),
+                        OnPick = (j, picked) => { NewGame(j >= 1); if (j == 2) SetAuto(true); },
                     });
                 }
                 else _ = ContinueGame();
@@ -904,6 +920,11 @@ public partial class Game
             return;
         }
         if (Mode != "map" || Busy) return;
+        if (Auto)
+        {
+            if (btn is "back" or "menu") OpenMainMenu();
+            return;
+        }
         switch (btn)
         {
             case "up": TryMove("U"); break;

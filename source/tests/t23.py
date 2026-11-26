@@ -59,8 +59,9 @@ async def main():
         print('teri B again', await talk('shinban',16,9,'U',[1]), 'apron', await S("S.inv.acc_apron||0"), 'teriDone', await S("!!S.flags.teriDone"), 'menu', await pg.evaluate("[...document.querySelectorAll('.menu.active li')].map(l=>l.textContent).join('|')"))
         await pg.evaluate("KDBG.closeUI()")
         for f in ['boss2','boss3']: await pg.evaluate(f"KDBG.flag('{f}')")
+        print('lion', await talk('port',20,9,'U'), 'wmDone', await S("!!S.flags.wmDone"), 'cards', await S("S.inv.card||0"))
         print('watermelon', await talk('port',18,8,'U'), 'cards', await S("S.inv.card||0"))
-        print('doodler', await talk('gallery1',16,7,'U'), 'cards', await S("S.inv.card||0"))
+        print('huangmao (no pen)', await talk('gallery1',16,7,'U'), 'cards', await S("S.inv.card||0"))
         print('party!', await talk('village',12,12,'U'), (await said(20))[-4:], 'hat', await S("S.inv.acc_party||0"), 'done', await S("S.quests.bday"), 'karma', await S("S.karma"), 'cards', await S("S.inv.card||0"))
         print('quests', await S("JSON.stringify(S.quests)"))
         # 討論板
@@ -70,7 +71,7 @@ async def main():
         await pg.evaluate("KDBG.join('sage'); KDBG.join('gag'); KDBG.join('del')")
         print('skits', await S("KDBG.D.skits.filter(k=>['bday1','teri1','zz1'].includes(k.id)).map(k=>k.id)"))
         # 最後的回應：確認新角色的台詞
-        voices = await S("JSON.stringify(KDBG.D.maps.core.ents[0].script).match(/生日哥|照燒貓|智障神|西瓜哥/g)")
+        voices = await S("JSON.stringify(KDBG.D.maps.core.ents[0].script).match(/生日哥|照燒貓|智障神|西瓜哥|獅子老大|黃毛|慕內/g)")
         print('final voices', voices)
         print('errors', errs)
         await b.close()
