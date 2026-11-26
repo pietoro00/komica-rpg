@@ -260,7 +260,7 @@ public partial class Game
             tcs.TrySetResult(r);
         }
 
-        void PickTarget(string kind, Action<Unit?> after)
+        void PickTarget(string kind, Action<Unit?> after, string vk = "hp")
         {
             List<Unit> list;
             if (kind == "enemy") list = AliveEnemies().Cast<Unit>().ToList();
@@ -272,7 +272,7 @@ public partial class Game
             {
                 Cls = "battle",
                 Title = "選擇對象",
-                Build = () => list.Select(t => new MenuItem { Label = UName(t), Right = t is Actor ac ? $"{ac.Hp}/{MaxHp(ac)}" : KnownText(((Enemy)t).Id) }).ToList(),
+                Build = () => list.Select(t => new MenuItem { Label = UName(t), Right = t is Actor ac ? VitalText(ac, vk, true) : KnownText(((Enemy)t).Id) }).ToList(),
                 OnMove = j => b.Hi = list[j],
                 OnBack = () => { b.Hi = null; PopMenu(); },
                 OnPick = (j, mi) => after(list[j]),
@@ -342,7 +342,7 @@ public partial class Game
                         {
                             var item = D.Items[it.Id!];
                             var kind = item.Target == "ally" ? "ally" : item.Target == "deadAlly" ? "deadAlly" : "";
-                            PickTarget(kind, t => Done(new BattleAction { Type = "item", U = a, Item = it.Id, T = t }));
+                            PickTarget(kind, t => Done(new BattleAction { Type = "item", U = a, Item = it.Id, T = t }), VitalKind(item));
                         },
                     });
                 }

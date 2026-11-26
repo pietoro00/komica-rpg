@@ -427,10 +427,18 @@ function openChest(e) {
 }
 
 /* ================================================================ 選單（地圖） */
-function partyPicker(title, onPick, filter) {
+// 選對象時右欄顯示的數值：回復 MP 的道具顯示 MP，兩者都回復就都顯示
+function vitalKind(it) { return it && it.mp ? (it.heal ? 'both' : 'mp') : 'hp'; }
+function vitalText(a, kind, short) {
+  const hp = `${a.hp}/${maxHp(a)}`, mp = `MP ${a.mp}/${maxMp(a)}`;
+  if (kind === 'mp') return mp;
+  if (kind === 'both') return `HP ${hp} ${mp}`;
+  return short ? hp : 'HP ' + hp;
+}
+function partyPicker(title, onPick, filter, kind) {
   pushMenu({
     title, build: () => S.party.map(a => ({
-      label: `${ad(a).name}　Lv ${a.level}`, right: `HP ${a.hp}/${maxHp(a)}`, disabled: filter ? !filter(a) : false,
+      label: `${ad(a).name}　Lv ${a.level}`, right: vitalText(a, kind || 'hp'), disabled: filter ? !filter(a) : false,
     })), onPick: i => onPick(S.party[i]),
   });
 }
@@ -581,7 +589,7 @@ function menuItemsField() {
       const item = D.items[it.id];
       if (item.target === 'allies') { applyItemField(it.id, S.party); return; }
       partyPicker('對誰使用？', a => { popMenu(); applyItemField(it.id, [a]); },
-        a => item.target === 'deadAlly' ? a.hp <= 0 : a.hp > 0);
+        a => item.target === 'deadAlly' ? a.hp <= 0 : a.hp > 0, vitalKind(item));
     },
   });
 }
@@ -860,7 +868,7 @@ function commandFor(a, canBack) {
   const B = S.battle;
   return new Promise(res => {
     const done = r => { while (S.menus.length) S.menus.pop(); B.hi = null; render(); res(r); };
-    const pickTarget = (kind, after) => {
+    const pickTarget = (kind, after, vk) => {
       let list;
       if (kind === 'enemy') list = aliveEnemies();
       else if (kind === 'ally') list = aliveParty();
@@ -869,7 +877,7 @@ function commandFor(a, canBack) {
       if (!list.length) { toast('沒有可以選擇的對象'); return; }
       pushMenu({
         cls: 'battle', title: '選擇對象',
-        build: () => list.map(t => ({ label: uname(t), right: isEnemy(t) ? knownText(t.id) : `${t.hp}/${maxHp(t)}` })),
+        build: () => list.map(t => ({ label: uname(t), right: isEnemy(t) ? knownText(t.id) : vitalText(t, vk || 'hp', true) })),
         onMove: j => { B.hi = list[j]; },
         onBack: () => { B.hi = null; popMenu(); },
         onPick: j => after(list[j]),
@@ -917,7 +925,7 @@ function commandFor(a, canBack) {
             onPick: (j, it) => {
               const item = D.items[it.id];
               const kind = item.target === 'ally' ? 'ally' : item.target === 'deadAlly' ? 'deadAlly' : null;
-              pickTarget(kind, t => done({ type: 'item', u: a, item: it.id, t }));
+              pickTarget(kind, t => done({ type: 'item', u: a, item: it.id, t }), vitalKind(item));
             },
           });
         } else if (i === 3) done({ type: 'defend', u: a });

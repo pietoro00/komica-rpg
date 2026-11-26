@@ -12,7 +12,18 @@ public partial class Game
 
     static string? SlotOf(ItemDef it) => it.Type switch { "weapon" => "weapon", "armor" => "armor", "acc" => "acc", _ => null };
 
-    void PartyPicker(string title, Action<Actor> onPick, Func<Actor, bool>? filter = null)
+    // 選對象時右欄顯示的數值：回復 MP 的道具顯示 MP，兩者都回復就都顯示
+    static string VitalKind(ItemDef? it) => it != null && it.Mp > 0 ? (it.Heal > 0 ? "both" : "mp") : "hp";
+    string VitalText(Actor a, string kind, bool shortForm = false)
+    {
+        var hp = $"{a.Hp}/{MaxHp(a)}";
+        var mp = $"MP {a.Mp}/{MaxMp(a)}";
+        if (kind == "mp") return mp;
+        if (kind == "both") return $"HP {hp} {mp}";
+        return shortForm ? hp : "HP " + hp;
+    }
+
+    void PartyPicker(string title, Action<Actor> onPick, Func<Actor, bool>? filter = null, string kind = "hp")
     {
         PushMenu(new Menu
         {
@@ -20,7 +31,7 @@ public partial class Game
             Build = () => Party.Select(a => new MenuItem
             {
                 Label = $"{Ad(a).Name}　Lv {a.Level}",
-                Right = $"HP {a.Hp}/{MaxHp(a)}",
+                Right = VitalText(a, kind),
                 Disabled = filter != null && !filter(a),
             }).ToList(),
             OnPick = (i, mi0) => onPick(Party[i]),
@@ -308,7 +319,7 @@ public partial class Game
                 var item = D.Items[id];
                 if (item.Target == "allies") { ApplyItemField(id, Party); return; }
                 PartyPicker("對誰使用？", a => { PopMenu(); ApplyItemField(id, new List<Actor> { a }); },
-                    a => item.Target == "deadAlly" ? a.Hp <= 0 : a.Hp > 0);
+                    a => item.Target == "deadAlly" ? a.Hp <= 0 : a.Hp > 0, VitalKind(item));
             },
         });
     }
