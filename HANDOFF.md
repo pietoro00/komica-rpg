@@ -28,6 +28,8 @@
   data/game.json        ← 產生出來的檔案，不要手改
   img/*.png             ← 產生出來的檔案，不要手改
   staticwebapp.config.json ← 安全性標頭、no-cache、擋掉 /source/*
+  motion/               ← 跟遊戲無關的小工具：手機鏡頭動靜偵測器（/motion/）。
+                          只有 /motion* 的標頭允許鏡頭（camera=(self)）和 blob: 影片，其他頁面維持全擋
   source/
     tools/
       content_db.py     ← 角色、技能、道具、敵人、敵群、商店、任務、圖鑑說明

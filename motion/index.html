@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>動靜偵測器</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+<h1>動靜偵測器</h1>
+<p class="sub">把手機架好、按開始，鏡頭前有東西動就會響、震動並截圖。</p>
+<div class="grid">
+ <div>
+  <div class="stage" id="stage">
+   <video id="vid" playsinline muted></video>
+   <canvas id="ov"></canvas>
+   <div class="msg" id="msg"><div><b>按「開始偵測」開啟鏡頭</b>畫面中有變化的地方會用紅黃色標出來</div></div>
+   <div class="pill" id="pill"><i></i><span>待機</span></div>
+  </div>
+  <div class="meter"><div class="cover" id="cover" style="width:100%"></div><div class="th" id="th"></div></div>
+  <div class="mlab"><span>畫面變動 <b id="pct">0%</b></span><span>超過白線就觸發</span></div>
+ </div>
+ <div class="panel">
+  <div class="row">
+   <button class="primary" id="go">開始偵測</button>
+   <button id="flip">切換鏡頭</button>
+  </div>
+  <label class="sl" for="sens">靈敏度 <span id="sensV"></span></label>
+  <input type="range" id="sens" min="1" max="10" value="6">
+  <p class="hint">越高越能抓到細微動作，但燈光閃爍也比較容易誤報。</p>
+  <label class="sl" for="area">觸發面積 <span id="areaV"></span></label>
+  <input type="range" id="area" min="0.2" max="20" step="0.2" value="1.6">
+  <p class="hint">畫面要有多少比例在變動才算「有動靜」。</p>
+  <label class="tg"><input type="checkbox" id="snd" checked> 發出警示音</label>
+  <label class="tg"><input type="checkbox" id="vib" checked> 震動（Android）</label>
+  <label class="tg"><input type="checkbox" id="shot" checked> 自動截圖</label>
+  <div class="row" style="margin-top:8px"><label class="file">用影片檔測試<input type="file" id="file" accept="video/*"></label></div>
+ </div>
+</div>
+<section class="log">
+ <h2>偵測紀錄</h2>
+ <div class="stats"><div><b id="cnt">0</b>次觸發</div><div><b id="last">—</b>最近一次</div></div>
+ <div class="shots" id="shots"><p class="empty">還沒有紀錄。截圖可以長按存到相簿。</p></div>
+ <div class="row" style="margin-top:12px"><button id="clr">清除紀錄</button></div>
+</section>
+<p class="note">畫面只在你的手機上分析，不會上傳。偵測時螢幕要保持開著、頁面要在前景，建議插著充電。第一次開始時瀏覽器會詢問鏡頭權限，請選允許。</p>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

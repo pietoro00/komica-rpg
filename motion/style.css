@@ -1,0 +1,53 @@
+/* VOICE: calm, practical monitoring tool
+   IDEA: a weather-radar style motion map over the camera
+   PICTURE: the live camera with a heat overlay of changed pixels
+   COLOUR and TYPE: navy ground, blue-teal-yellow-red scale; system fonts (site CSP)
+   LAYOUT: stage first, meter bar, controls beside (stacked on phone), event log */
+:root{color-scheme:dark;--bg:#0b1433;--panel:#121d45;--line:#26346b;--ink:#eef1fb;--mute:#a3acd0;--b:#3b4fd8;--t:#4fc1c6;--y:#f7e463;--r:#e8452c}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;overflow-x:clip}
+.wrap{max-width:1100px;margin:0 auto;padding:clamp(16px,3vw,32px) max(4vw,14px) 40px}
+h1{font:800 clamp(28px,5vw,40px)/1.05 system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;margin:0 0 6px}
+.sub{color:var(--mute);margin:0 0 16px;font-size:15px}
+.grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px;align-items:start}
+@media(max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}}
+.stage{position:relative;aspect-ratio:4/3;background:#060b20;border-radius:14px;overflow:hidden;border:2px solid var(--line);transition:border-color .2s,box-shadow .2s}
+.stage.hot{border-color:var(--r);box-shadow:0 0 0 4px rgba(232,69,44,.35)}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#ov{image-rendering:pixelated;mix-blend-mode:screen;opacity:.85}
+.mirror video,.mirror #ov{transform:scaleX(-1)}
+.pill{position:absolute;left:12px;top:12px;padding:6px 12px;border-radius:99px;background:rgba(6,11,32,.78);font-weight:700;font-size:14px}
+.pill i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--mute);margin-right:7px;vertical-align:1px}
+.pill.on i{background:var(--t)}.pill.hot i{background:var(--r)}
+.msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--mute);font-size:15px}
+.msg[hidden]{display:none}
+.msg b{display:block;color:var(--ink);font-size:18px;margin-bottom:6px}
+.meter{margin:14px 0 4px;position:relative;height:16px;border-radius:8px;background:linear-gradient(90deg,var(--b),var(--t),var(--y),var(--r));overflow:hidden}
+.meter .cover{position:absolute;top:0;bottom:0;right:0;background:rgba(11,20,51,.82);transition:width .1s}
+.meter .th{position:absolute;top:0;bottom:0;width:3px;background:#fff}
+.mlab{display:flex;justify-content:space-between;gap:10px;color:var(--mute);font-size:13px}
+.mlab b{color:var(--ink);font-variant-numeric:tabular-nums}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.row{display:flex;flex-wrap:wrap;gap:10px}
+button,.file{position:relative;font:700 16px system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;min-height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--line);background:#1a2758;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+button.primary{background:var(--t);color:#062027;border-color:var(--t);flex:1 1 140px}
+button.primary.stop{background:var(--r);border-color:var(--r);color:#fff}
+button:focus-visible,.file:focus-within{outline:3px solid var(--y);outline-offset:2px}
+.file input{position:absolute;opacity:0;width:1px;height:1px}
+label.sl{display:block;margin-top:16px;font-weight:500}
+label.sl span{float:right;color:var(--y);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;height:44px;accent-color:var(--t)}
+.hint{color:var(--mute);font-size:13px;margin:0}
+.tg{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}
+.tg input{width:22px;height:22px;accent-color:var(--t)}
+h2{font:700 21px/1.2 system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;margin:0 0 10px}
+.log{margin-top:24px}
+.stats{display:flex;gap:28px;flex-wrap:wrap;margin-bottom:12px}
+.stats div{font-size:13px;color:var(--mute)}.stats b{display:block;font:800 28px/1.2 system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}
+.shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.shots figure{margin:0;background:#060b20;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.shots img{display:block;width:100%}
+.shots figcaption{padding:4px 8px;font-size:13px;color:var(--mute);white-space:nowrap}
+.empty{color:var(--mute);font-size:14px;margin:0}
+.note{margin-top:28px;color:var(--mute);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
