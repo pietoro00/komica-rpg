@@ -9,7 +9,7 @@
 <body>
 <div class="wrap">
 <h1>動靜偵測器</h1>
-<p class="sub">把手機架好、按開始，鏡頭前有東西動就會響、震動並截圖。</p>
+<p class="sub">把手機架好、按開始，鏡頭前有東西動就會響、震動並記下時間。</p>
 <div class="grid">
  <div>
   <div class="stage" id="stage">
@@ -34,14 +34,13 @@
   <p class="hint">畫面要有多少比例在變動才算「有動靜」。</p>
   <label class="tg"><input type="checkbox" id="snd" checked> 發出警示音</label>
   <label class="tg"><input type="checkbox" id="vib" checked> 震動（Android）</label>
-  <label class="tg"><input type="checkbox" id="shot" checked> 自動截圖</label>
   <div class="row" style="margin-top:8px"><label class="file">用影片檔測試<input type="file" id="file" accept="video/*"></label></div>
  </div>
 </div>
 <section class="log">
  <h2>偵測紀錄</h2>
  <div class="stats"><div><b id="cnt">0</b>次觸發</div><div><b id="last">—</b>最近一次</div></div>
- <div class="shots" id="shots"><p class="empty">還沒有紀錄。截圖可以長按存到相簿。</p></div>
+ <ol class="times" id="times"><li class="empty">還沒有紀錄。</li></ol>
  <div class="row" style="margin-top:12px"><button id="clr">清除紀錄</button></div>
 </section>
 <p class="note">畫面只在你的手機上分析，不會上傳。偵測時螢幕要保持開著、頁面要在前景，建議插著充電。第一次開始時瀏覽器會詢問鏡頭權限，請選允許。</p>

@@ -6,11 +6,11 @@ const work=document.createElement('canvas');
 const wctx=work.getContext('2d',{willReadFrequently:true});
 const octx=ov.getContext('2d');
 let prev=null,running=false,stream=null,facing='environment',raf=0,warm=0,lastHit=0,lastT=0,count=0,ac=null,wake=null,fileURL=null;
-const EMPTY='<p class="empty">還沒有紀錄。截圖可以長按存到相簿。</p>';
+const EMPTY='<li class="empty">還沒有紀錄。</li>';
 
 const store={get(k,d){try{const v=localStorage.getItem('md_'+k);return v===null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem('md_'+k,JSON.stringify(v))}catch(e){}}};
 for(const id of ['sens','area'])$(id).value=store.get(id,$(id).value);
-for(const id of ['snd','vib','shot'])$(id).checked=store.get(id,$(id).checked);
+for(const id of ['snd','vib'])$(id).checked=store.get(id,$(id).checked);
 facing=store.get('facing',facing);
 
 function labels(){
@@ -115,29 +115,21 @@ function hit(pct){
   $('last').textContent=time;
   if($('snd').checked)beep();
   if($('vib').checked&&navigator.vibrate)try{navigator.vibrate([200,100,200])}catch(e){}
-  if($('shot').checked)snap(time,pct);
+  addTime(time,pct);
 }
-function snap(time,pct){
-  const vw=vid.videoWidth||4,vh=vid.videoHeight||3,c=document.createElement('canvas');
-  c.width=Math.min(480,vw);c.height=Math.round(c.width*vh/vw);
-  const x=c.getContext('2d');
-  if(stage.classList.contains('mirror')){x.translate(c.width,0);x.scale(-1,1)}
-  x.drawImage(vid,0,0,c.width,c.height);
-  x.globalCompositeOperation='screen';x.globalAlpha=.7;x.imageSmoothingEnabled=false;x.drawImage(ov,0,0,c.width,c.height);
-  const sh=$('shots');sh.querySelector('.empty')?.remove();
-  const f=document.createElement('figure'),im=document.createElement('img'),cap=document.createElement('figcaption');
-  im.src=c.toDataURL('image/jpeg',.8);im.alt='觸發時的畫面 '+time;
-  cap.textContent=time+' · '+pct.toFixed(1)+'%';
-  f.append(im,cap);sh.prepend(f);
-  while(sh.children.length>30)sh.lastElementChild.remove();
+function addTime(time,pct){
+  const ol=$('times');ol.querySelector('.empty')?.remove();
+  const li=document.createElement('li'),t=document.createElement('b');
+  t.textContent=time;li.append(t,' 變動 '+pct.toFixed(1)+'%');ol.prepend(li);
+  while(ol.children.length>50)ol.lastElementChild.remove();
 }
 
 ['sens','area'].forEach(id=>$(id).addEventListener('input',()=>{store.set(id,+$(id).value);labels()}));
-['snd','vib','shot'].forEach(id=>$(id).addEventListener('change',()=>store.set(id,$(id).checked)));
+['snd','vib'].forEach(id=>$(id).addEventListener('change',()=>store.set(id,$(id).checked)));
 $('go').addEventListener('click',()=>{if(running||stream){stopAll();return}initAudio();startCam()});
 $('flip').addEventListener('click',()=>{facing=facing==='user'?'environment':'user';store.set('facing',facing);if(stream){initAudio();startCam()}});
 $('file').addEventListener('change',e=>{const f=e.target.files[0];if(f){initAudio();startFile(f)}e.target.value=''});
-$('clr').addEventListener('click',()=>{count=0;$('cnt').textContent='0';$('last').textContent='—';$('shots').innerHTML=EMPTY});
+$('clr').addEventListener('click',()=>{count=0;$('cnt').textContent='0';$('last').textContent='—';$('times').innerHTML=EMPTY});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&running)keepAwake()});
 labels();
 }
